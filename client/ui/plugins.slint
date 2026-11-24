@@ -45,6 +45,7 @@ export component Block inherits VerticalLayout {
     }
 
     if root.data.kind == "heading": Text {
+        width: root.width;
         text: root.data.text;
         color: Theme.text;
         font-size: 24px;
@@ -54,8 +55,8 @@ export component Block inherits VerticalLayout {
 
     if root.data.kind == "text": VerticalLayout {
         spacing: 2px;
-        Text { text: root.data.text; color: Theme.text; font-size: 14px; wrap: word-wrap; }
-        if root.data.sub != "": Text { text: root.data.sub; color: Theme.text-dim; font-size: 13px; wrap: word-wrap; }
+        Text { width: root.width; text: root.data.text; color: Theme.text; font-size: 14px; wrap: word-wrap; }
+        if root.data.sub != "": Text { width: root.width; text: root.data.sub; color: Theme.text-dim; font-size: 13px; wrap: word-wrap; }
     }
 
     if root.data.kind == "button": HorizontalLayout {
@@ -235,50 +236,47 @@ export component PluginDialog inherits Rectangle {
 
         TouchArea { }
 
-        Scroller {
-            content-height: body.preferred-height;
+        body := VerticalLayout {
+            width: root.box-width;
+            padding: 28px;
+            spacing: 14px;
 
-            body := VerticalLayout {
-                width: root.box-width;
-                padding: 28px;
-                spacing: 14px;
+            HorizontalLayout {
+                spacing: 12px;
 
-                HorizontalLayout {
-                    spacing: 12px;
+                Text {
+                    horizontal-stretch: 1;
+                    text: root.data.title;
+                    color: Theme.text;
+                    font-size: 22px;
+                    font-weight: 800;
+                    wrap: word-wrap;
+                }
 
-                    Text {
-                        horizontal-stretch: 1;
-                        text: root.data.title;
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: close-ta.has-hover ? Theme.tile : transparent;
+
+                    Icon {
+                        d: Icons.close;
+                        size: 16px;
                         color: Theme.text;
-                        font-size: 22px;
-                        font-weight: 800;
-                        wrap: word-wrap;
                     }
 
-                    Rectangle {
-                        width: 32px;
-                        height: 32px;
-                        border-radius: 16px;
-                        background: close-ta.has-hover ? Theme.tile : transparent;
-
-                        Icon {
-                            d: Icons.close;
-                            size: 16px;
-                            color: Theme.text;
-                        }
-
-                        close-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { Plugins.close-dialog(root.data.plugin, root.data.id); }
-                        }
+                    close-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Plugins.close-dialog(root.data.plugin, root.data.id); }
                     }
                 }
+            }
 
-                for b in root.data.blocks: Block {
-                    data: b;
-                    plugin: root.data.plugin;
-                    section: root.data.id;
-                }
+            for b in root.data.blocks: Block {
+                width: root.box-width - 56px;
+                data: b;
+                plugin: root.data.plugin;
+                section: root.data.id;
             }
         }
     }

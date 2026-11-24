@@ -540,7 +540,19 @@
       useRef: reactShim.useRef,
       useMemo: reactShim.useMemo,
       useCallback: reactShim.useCallback,
+      cloneElement: (el, props, ...children) => ({ ...el, props: { ...(el.props || {}), ...(props || {}) }, children: children.length ? children.flat(Infinity) : el.children }),
     }),
+    ReactJSX: Object.freeze({
+      jsx: (type, { children, ...props } = {}) => reactShim.createElement(type, props, children),
+      jsxs: (type, { children, ...props } = {}) => reactShim.createElement(type, props, children),
+      Fragment: reactShim.Fragment,
+    }),
+    ReactDOM: Object.freeze({
+      createPortal: element => element,
+      render: () => {},
+      unmountComponentAtNode: () => false,
+    }),
+    Locale: Object.freeze({ get: key => String(key ?? ""), getLocale: () => "en" }),
     PopupModal: Object.freeze({
       display: ({ title, content } = {}) => Rustify.UI.Dialog.show(title, content),
       hide: () => Rustify.UI.Dialog.hide(),
@@ -548,6 +560,14 @@
     Platform: {
       History: { push: path => Rustify.navigate(String(path && path.pathname ? path.pathname : path)) },
       ClipboardAPI: { copy: value => Promise.resolve(Rustify.Clipboard.copy(value)) },
+      PlayerAPI: {
+        pause: () => Promise.resolve(Player.pause()),
+        resume: () => Promise.resolve(Player.play()),
+        skipToNext: () => Promise.resolve(Player.next()),
+        skipToPrevious: () => Promise.resolve(Player.back()),
+        seekTo: ms => Promise.resolve(Player.seek(ms)),
+        getState: () => asSpicetifyData(),
+      },
     },
     Config: Object.freeze({ custom_apps: Object.freeze([]), extensions: Object.freeze([]), current_theme: "" }),
   };

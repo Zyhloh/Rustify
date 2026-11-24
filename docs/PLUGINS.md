@@ -356,7 +356,12 @@ Rustify provides a `Spicetify` global that covers the commonly used extension AP
 | `Spicetify.URI` | `isTrack`, `isAlbum`, `isArtist`, `isPlaylistV1OrV2` |
 | `Spicetify.Platform.History.push` | Supported for Spotify URIs |
 | `Spicetify.SVGIcons` | Rustify's built-in icon paths |
-| `Spicetify.React`, `ReactDOM`, `document`, CSS injection | Not available |
+| `Spicetify.PopupModal.display({ title, content })` / `hide()` | Supported. Shown as a native Rustify dialog. `content` can be a string, Rustify blocks, or React elements |
+| `Spicetify.React` (`createElement`, `useState`, `useEffect`, `useRef`, `useMemo`, `useCallback`, `cloneElement`, `Fragment`), `Spicetify.ReactJSX` | Supported inside popups. `p`, `span`, `code`, `h1`-`h3`, `button`, `img`, `hr` and checkboxes render as native blocks. CSS styles are ignored, except a filled `background` makes a button primary |
+| `Spicetify.Platform.ClipboardAPI.copy` | Supported, at most once a second |
+| `Spicetify.Platform.PlayerAPI` (`pause`, `resume`, `skipToNext`, `skipToPrevious`, `seekTo`) | Supported, needs `player` |
+| `Spicetify.Locale.get`, `Spicetify.Config`, `localStorage`, `navigator.userAgent`, `window` | Provided. `localStorage` is the plugin's own storage |
+| `ReactDOM.render` into the page, `document`, CSS injection, `fetch`, `<audio>` | Not available. Use pages, sections and dialogs for UI. Plugins can't reach the internet or play their own audio |
 | `CosmosAsync.post/put/del`, `Platform` internals | Not available |
 
 [`examples/plugins/spicetify-song-info`](../examples/plugins/spicetify-song-info) is a Spicetify extension that runs unchanged. It uses the usual wait loop, `Topbar.Button`, `ContextMenu.Item`, `LocalStorage`, `CosmosAsync.get` and `URI`, and only adds a `manifest.json`. Rustify's tests run it on every build.
