@@ -300,6 +300,7 @@ Every add-on is reviewed when it's installed or changed. The result is shown on 
 | Decodes hidden text (`atob`, many `fromCharCode` calls) | Review |
 | Minified code that can't be read | Review |
 | Tries to reach the internet (`fetch`, `XMLHttpRequest`, `WebSocket`) | Review |
+| A loop that never ends on its own (`while (true)`, `for (;;)`) | Review |
 | Reads the user's profile (`/v1/me`) | Review |
 | Changes playback from timers without user input | Review |
 | Asks for every permission | Review |

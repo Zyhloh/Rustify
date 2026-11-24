@@ -416,6 +416,10 @@ pub fn pending_enable(id: &str) -> Option<EnableAsk> {
         let notes: Vec<String> = f.review.findings.iter().filter(|x| x.level > review::Level::Note).map(|x| x.text.clone()).collect();
         let body = match m.kind {
             Kind::Theme => format!("{} by {author} will change Rustify's colors.", m.name),
+            Kind::Plugin if m.permissions.is_empty() => format!(
+                "{} by {author} will run inside Rustify. It can add buttons, menu items and pages, but doesn't ask for any special permissions. Only turn on plugins you trust.",
+                m.name
+            ),
             Kind::Plugin => format!(
                 "{} by {author} will run inside Rustify. It can {}. Only turn on plugins you trust.",
                 m.name,

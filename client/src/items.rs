@@ -367,7 +367,7 @@ pub fn pick(app: &App, ctx: &Ctx, action: &str) {
             edit.set_open(true);
         }
         "delete" => {
-            open_confirm(app, "Delete from Your Library?", &format!("This will delete {} from Your Library.", card.title), "Delete", Vec::new(), false);
+            open_confirm(app, "Delete from Your Library?", &format!("This will delete {} from Your Library.", card.title), "Delete", Vec::new(), true);
         }
         _ => {}
     }

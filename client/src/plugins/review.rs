@@ -123,6 +123,10 @@ pub fn review(m: &Manifest, script: &str) -> Report {
         if script.lines().any(|l| l.len() > 4000) || (script.len() > 20_000 && script.len() / lines > 500) {
             report.add(Level::Review, "The code is minified, so it's hard to check what it does. Prefer plugins with readable source.");
         }
+        let compact: String = script.chars().filter(|c| !c.is_whitespace()).collect();
+        if compact.contains("while(true)") || compact.contains("while(1)") || compact.contains("for(;;)") {
+            report.add(Level::Review, "Has a loop that never ends on its own, which can freeze it. Rustify stops plugins that hang.");
+        }
         if calls(script, "fetch") || script.contains("XMLHttpRequest") || script.contains("WebSocket") {
             report.add(Level::Review, "Tries to connect to the internet. Rustify blocks this, but ask the author why.");
         }
@@ -207,6 +211,13 @@ mod tests {
     fn flags_automatic_playback_changes() {
         let r = review(&plugin(&["player"]), "setInterval(() => Rustify.Player.next(), 1000)");
         assert_eq!(r.level(), Some(Level::Review));
+    }
+
+    #[test]
+    fn flags_endless_loops() {
+        assert_eq!(review(&plugin(&[]), "Rustify.on('x', () => { while ( true ) {} })").level(), Some(Level::Review));
+        assert_eq!(review(&plugin(&[]), "for (;;) {}").level(), Some(Level::Review));
+        assert_eq!(review(&plugin(&[]), "while (i < 3) i++").level(), None);
     }
 
     #[test]
