@@ -455,55 +455,47 @@ export component ExtensionsPage inherits Rectangle {
             padding-bottom: 40px;
             spacing: 20px;
 
-            HorizontalLayout {
-                spacing: 16px;
+            VerticalLayout {
+                spacing: 4px;
 
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: 4px;
-
-                    Text {
-                        text: "Plugins & themes";
-                        color: Theme.text;
-                        font-size: 32px;
-                        font-weight: 800;
-                        letter-spacing: -1px;
-                    }
-
-                    Text {
-                        text: "\{Plugins.plugin-count} \{Plugins.plugin-count == 1 ? "plugin" : "plugins"} and \{Plugins.theme-count} \{Plugins.theme-count == 1 ? "theme" : "themes"} installed, \{Plugins.running-count} on";
-                        color: Theme.text-dim;
-                        font-size: 14px;
-                    }
+                Text {
+                    text: "Plugins & themes";
+                    color: Theme.text;
+                    font-size: 32px;
+                    font-weight: 800;
+                    letter-spacing: -1px;
                 }
 
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: end;
+                Text {
+                    text: "\{Plugins.plugin-count} \{Plugins.plugin-count == 1 ? "plugin" : "plugins"} and \{Plugins.theme-count} \{Plugins.theme-count == 1 ? "theme" : "themes"} installed, \{Plugins.running-count} on";
+                    color: Theme.text-dim;
+                    font-size: 14px;
+                }
+            }
 
-                    PillButton {
-                        y: 12px;
-                        outline: true;
-                        icon: Icons.folder;
-                        text: "Open folder";
-                        clicked => { Plugins.open-folder(); }
-                    }
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
 
-                    PillButton {
-                        y: 12px;
-                        outline: true;
-                        icon: Icons.link;
-                        text: "From GitHub";
-                        clicked => { Plugins.link-open = !Plugins.link-open; }
-                    }
+                PillButton {
+                    primary: true;
+                    icon: Icons.plus;
+                    text: Plugins.installing && !Plugins.link-open ? "Installing…" : "Install from file";
+                    clicked => { Plugins.install-file(); }
+                }
 
-                    PillButton {
-                        y: 12px;
-                        primary: true;
-                        icon: Icons.plus;
-                        text: Plugins.installing && !Plugins.link-open ? "Installing…" : "Install from file";
-                        clicked => { Plugins.install-file(); }
-                    }
+                PillButton {
+                    outline: true;
+                    icon: Icons.link;
+                    text: "From GitHub";
+                    clicked => { Plugins.link-open = !Plugins.link-open; }
+                }
+
+                PillButton {
+                    outline: true;
+                    icon: Icons.folder;
+                    text: "Open folder";
+                    clicked => { Plugins.open-folder(); }
                 }
             }
 
