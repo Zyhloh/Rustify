@@ -6,6 +6,24 @@ Rustify reimplements the Spotify desktop app with a native [Slint](https://slint
 
 Rustify is an independent project. It is not affiliated with or endorsed by Spotify.
 
+## Why Rustify
+
+Most third-party Spotify clients, including Spotifast, play audio through [librespot](https://github.com/librespot-org/librespot). librespot needs Spotify to hand out a decryption key for every track, and Spotify refuses those requests for many accounts, especially newer ones. When that happens playback fails, and there is nothing a user can do to fix it.
+
+Rustify takes a different approach:
+
+- **Playback uses Spotify's official Web Playback SDK**, the same player behind open.spotify.com. Spotify supports it for every Premium account, so playback works for everyone.
+- **librespot is used only for metadata**, such as your library, Liked Songs, lyrics and artist details. It never handles audio, so the audio key problem doesn't apply.
+- **Rustify keeps working when the Web API is rate limited.** Library, Liked Songs, playlists and profile data fall back to Spotify's internal endpoints.
+- **It's a native app.** The interface is a Rust and Slint application rather than a browser wrapper. It idles at near-zero CPU and starts in about a second.
+
+| | Rustify | librespot-based clients |
+| --- | --- | --- |
+| Works with every Premium account | Yes | No, depends on audio key access |
+| Spotify Connect, DJ, lyrics | Yes | Varies |
+| Survives Web API rate limits | Yes | Usually not |
+| Native UI | Yes | Varies |
+
 ## Features
 
 - Home, search, Your Library, playlists, albums, artists, podcasts, Liked Songs, What's New and Recents
