@@ -3,6 +3,8 @@ mod install;
 mod library;
 pub mod manifest;
 mod review;
+#[cfg(test)]
+mod bench;
 
 use crate::{App, MenuEntry, Player, PluginBlock, PluginControl, PluginInfo, PluginLog, PluginPageLink, Plugins, Store, Theme, config::Config, ctx::Ctx, pages};
 use host::{Cmd, UiOp};
