@@ -26,6 +26,9 @@ pub enum Route {
     ShowAll { title: String },
     Show { id: String },
     News,
+    Plugin { plugin: String, id: String },
+    Extensions,
+    Extension { id: String },
 }
 
 struct Pages {
@@ -159,6 +162,15 @@ fn show(app: &App) -> Route {
             store.set_page("profile".into());
         }
         Route::Settings => store.set_page("settings".into()),
+        Route::Extensions => store.set_page("extensions".into()),
+        Route::Extension { id } => {
+            crate::plugins::select(app, id);
+            store.set_page("extension".into());
+        }
+        Route::Plugin { plugin, id } => {
+            crate::plugins::show_page(app, plugin, id);
+            store.set_page("plugin".into());
+        }
         Route::History => {
             store.set_history_loading(true);
             store.set_page("history".into());
@@ -184,6 +196,10 @@ fn show(app: &App) -> Route {
             store.set_page("category".into());
         }
     }
+    if !matches!(route, Route::Plugin { .. }) {
+        crate::plugins::left_page();
+    }
+    crate::plugins::page_changed(&store.get_page());
     route
 }
 

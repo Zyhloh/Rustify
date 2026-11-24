@@ -1,7 +1,7 @@
 import { Theme } from "theme.slint";
 import { Icon, Icons } from "icons.slint";
 import { IconButton } from "components.slint";
-import { Store, Shell, Panels, Prefs } from "store.slint";
+import { Store, Shell, Panels, Prefs, Plugins } from "store.slint";
 
 component WindowButton inherits Rectangle {
     in property <string> icon;
@@ -166,6 +166,16 @@ export component TopBar inherits Rectangle {
         Rectangle { width: 8px; }
         IconButton { y: 16px; icon: Icons.back; icon-size: 20px; ghost: true; enabled: Store.can-back; clicked => { Store.go-back(); } }
         IconButton { y: 16px; icon: Icons.forward; icon-size: 20px; ghost: true; enabled: Store.can-forward; clicked => { Store.go-forward(); } }
+        if Plugins.topbar.length > 0: Rectangle { width: 4px; }
+        for button in Plugins.topbar: IconButton {
+            y: 16px;
+            icon: button.icon;
+            icon-size: 20px;
+            ghost: true;
+            active: button.active;
+            active-color: Theme.text;
+            clicked => { Plugins.click(button.plugin, button.id); }
+        }
     }
 
     HorizontalLayout {
@@ -206,6 +216,14 @@ export component TopBar inherits Rectangle {
         alignment: end;
         spacing: 4px;
 
+        if root.width >= 960px && Plugins.system: IconButton {
+            y: 16px;
+            icon: Icons.puzzle;
+            ghost: true;
+            active: Store.page == "extensions" || Store.page == "extension";
+            active-color: Theme.text;
+            clicked => { Plugins.open-manager(); }
+        }
         if root.width >= 960px: IconButton {
             y: 16px;
             icon: Icons.bell;

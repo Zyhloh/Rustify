@@ -1,7 +1,7 @@
 import { Theme, Fmt } from "theme.slint";
 import { Icon, Icons } from "icons.slint";
 import { IconButton, Slider, LikeButton, VolumeButton, PillButton } from "components.slint";
-import { Player, Shell, Store, Panels } from "store.slint";
+import { Player, Shell, Store, Panels, Plugins } from "store.slint";
 
 export component PlayButton inherits Rectangle {
     in property <length> size: 36px;
@@ -257,6 +257,14 @@ export component PlayerBar inherits Rectangle {
         alignment: end;
         spacing: 2px;
 
+        for button in Plugins.playbar: IconButton {
+            y: 20px;
+            icon: button.icon;
+            icon-size: 18px;
+            active: button.active;
+            clicked => { Plugins.click(button.plugin, button.id); }
+        }
+
         if Player.dj: Rectangle {
             y: 18px;
             width: 36px;
@@ -294,9 +302,16 @@ export component PlayerBar inherits Rectangle {
             icon: Icons.lyrics;
             icon-size: 18px;
             dot: true;
-            active: Store.page == "lyrics";
+            active: Shell.fullscreen ? Shell.fullscreen-lyrics : Store.page == "lyrics";
             enabled: Player.has-track;
-            clicked => { Panels.toggle-lyrics(); }
+            clicked => {
+                if Shell.fullscreen {
+                    Shell.fullscreen-lyrics = !Shell.fullscreen-lyrics;
+                    Shell.fullscreen-lyrics-changed();
+                } else {
+                    Panels.toggle-lyrics();
+                }
+            }
         }
         IconButton {
             y: 20px;
@@ -346,9 +361,9 @@ export component PlayerBar inherits Rectangle {
         }
         if root.roomy: IconButton {
             y: 20px;
-            icon: Icons.fullscreen;
+            icon: Shell.fullscreen ? Icons.collapse : Icons.fullscreen;
             icon-size: 18px;
-            enabled: Player.has-track;
+            enabled: Player.has-track || Shell.fullscreen;
             clicked => { Shell.toggle-fullscreen(); }
         }
     }

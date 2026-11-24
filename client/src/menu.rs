@@ -52,6 +52,7 @@ pub fn open(app: &App, ctx: &Ctx, track: TrackData, x: f32, y: f32) {
 
     menu.set_track_id(track.id.clone());
     menu.set_liked(liked);
+    menu.set_plugin_items(slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(crate::plugins::menu_entries("track")))));
     menu.set_artists(ModelRc::from(Rc::new(VecModel::from(
         track
             .artists
@@ -187,6 +188,10 @@ pub fn action(app: &App, ctx: &Ctx, action: &str) {
     let id = track.id.to_string();
     let uri = track.uri.to_string();
     close(app);
+
+    if crate::plugins::menu_pick(action, "track", &uri, &track.title) {
+        return;
+    }
 
     match action {
         "like" => {

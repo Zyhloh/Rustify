@@ -266,6 +266,7 @@ pub fn apply_image(app: &App, key: &str, image: Image, accent: [f32; 3]) {
     crate::podcast::apply_image(app, key, &image, accent);
     crate::find::apply_image(key, &image);
     crate::news::apply_image(key, &image);
+    crate::plugins::apply_image(key, &image);
     let store = app.global::<Store>();
     let player = app.global::<Player>();
 
@@ -300,6 +301,9 @@ pub fn apply_image(app: &App, key: &str, image: Image, accent: [f32; 3]) {
         }
         if keys.art_large == key {
             player.set_art_large(image.clone());
+            if let Some(color) = art_color(&image) {
+                player.set_art_color(color);
+            }
         }
         if keys.artist == key {
             let mut artist = store.get_artist();
@@ -390,7 +394,11 @@ pub fn apply_player(app: &App, state: &models::PlayerState) -> Option<TrackChang
     let small = track.image_small.as_deref().map(|u| images::key(u, 128)).unwrap_or_default();
     let large = track.image_large.as_deref().map(|u| images::key(u, COVER_PX)).unwrap_or_default();
     player.set_art(cached(&small));
-    player.set_art_large(cached(&large));
+    let large_image = cached(&large);
+    if let Some(color) = art_color(&large_image) {
+        player.set_art_color(color);
+    }
+    player.set_art_large(large_image);
 
     MODELS.with(|m| {
         let mut keys = m.keys.borrow_mut();
@@ -449,4 +457,54 @@ fn group_digits(n: u64) -> String {
         out.push(ch);
     }
     out
+}
+
+fn art_color(image: &slint::Image) -> Option<slint::Color> {
+    let pixels = image.to_rgba8()?;
+    let (w, h) = (pixels.width() as usize, pixels.height() as usize);
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let data = pixels.as_slice();
+    let step = (w * h / 4096).max(1);
+    let (mut r, mut g, mut b, mut weight) = (0f32, 0f32, 0f32, 0f32);
+    for p in data.iter().step_by(step) {
+        let (pr, pg, pb) = (p.r as f32 / 255.0, p.g as f32 / 255.0, p.b as f32 / 255.0);
+        let max = pr.max(pg).max(pb);
+        let min = pr.min(pg).min(pb);
+        let w = 0.15 + (max - min) * 2.0;
+        r += pr * w;
+        g += pg * w;
+        b += pb * w;
+        weight += w;
+    }
+    let (r, g, b) = (r / weight, g / weight, b / weight);
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 2.0;
+    let d = max - min;
+    let s = if d == 0.0 { 0.0 } else { d / (1.0 - (2.0 * l - 1.0).abs()) };
+    let hue = if d == 0.0 {
+        0.0
+    } else if max == r {
+        60.0 * (((g - b) / d).rem_euclid(6.0))
+    } else if max == g {
+        60.0 * ((b - r) / d + 2.0)
+    } else {
+        60.0 * ((r - g) / d + 4.0)
+    };
+    let (s, l) = (s.min(0.55), l.clamp(0.2, 0.3));
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let x = c * (1.0 - ((hue / 60.0).rem_euclid(2.0) - 1.0).abs());
+    let m = l - c / 2.0;
+    let (r1, g1, b1) = match (hue / 60.0) as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let to = |v: f32| ((v + m).clamp(0.0, 1.0) * 255.0).round() as u8;
+    Some(slint::Color::from_rgb_u8(to(r1), to(g1), to(b1)))
 }

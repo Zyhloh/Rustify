@@ -294,6 +294,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/auth/login", post(auth_login))
         .route("/auth/logout", post(auth_logout))
         .route("/auth/library", post(auth_library))
+        .route("/plugin/spotify", get(plugin_spotify))
         .route("/me", get(me))
         .route("/home", get(home_feed))
         .route("/library", get(library))
@@ -348,6 +349,27 @@ async fn auth_status(State(st): Shared) -> Json<AuthStatus> {
         library_ready: st.engine.session().await.is_some(),
         library_connecting: st.engine.connecting.load(Ordering::SeqCst),
     })
+}
+
+#[derive(Deserialize)]
+struct PluginQuery {
+    path: String,
+}
+
+fn plugin_path_ok(path: &str) -> bool {
+    path.starts_with("/v1/")
+        && path.len() <= 512
+        && !path.contains("..")
+        && !path.contains("//")
+        && path.bytes().all(|b| b.is_ascii_alphanumeric() || b"/_-.?=&,%:+".contains(&b))
+}
+
+async fn plugin_spotify(State(st): Shared, axum::extract::Query(q): axum::extract::Query<PluginQuery>) -> ApiResult<Value> {
+    if !plugin_path_ok(&q.path) {
+        return Err(anyhow::anyhow!("invalid plugin request").into());
+    }
+    let path = q.path.trim_start_matches("/v1");
+    Ok(Json(st.web.get::<Value>(path).await?))
 }
 
 async fn auth_library(State(st): Shared) -> Json<Value> {
@@ -1098,4 +1120,21 @@ async fn events(State(st): Shared, ws: WebSocketUpgrade) -> Response {
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plugin_path_ok;
+
+    #[test]
+    fn plugin_paths() {
+        assert!(plugin_path_ok("/v1/me/top/artists?limit=5"));
+        assert!(plugin_path_ok("/v1/search?q=lucid%20dreams&type=track"));
+        assert!(!plugin_path_ok("/v2/me"));
+        assert!(!plugin_path_ok("/v1/../token"));
+        assert!(!plugin_path_ok("https://evil.example/v1/me"));
+        assert!(!plugin_path_ok("/v1//me"));
+        assert!(!plugin_path_ok("/v1/me
+"));
+    }
 }

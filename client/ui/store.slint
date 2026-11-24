@@ -341,6 +341,14 @@ export global Prefs {
     callback preset-menu(length, length);
 }
 
+export struct MenuEntry {
+    id: string,
+    label: string,
+    icon: string,
+    separator: bool,
+    checked: bool,
+}
+
 export global Menu {
     in property <bool> open;
     in property <length> x;
@@ -352,6 +360,7 @@ export global Menu {
     in property <[PickerItem]> playlists;
     in property <string> sleep;
     in property <bool> removable;
+    in property <[MenuEntry]> plugin-items;
 
     callback action(string);
     callback add-to(string);
@@ -360,13 +369,6 @@ export global Menu {
     callback close();
 }
 
-export struct MenuEntry {
-    id: string,
-    label: string,
-    icon: string,
-    separator: bool,
-    checked: bool,
-}
 
 export global ItemMenu {
     in property <bool> open;
@@ -394,6 +396,8 @@ export global Confirm {
     in property <bool> open;
     in property <string> title;
     in property <string> body;
+    in property <[string]> notes;
+    in property <bool> danger;
     in property <string> action-label;
     callback accept();
     callback cancel();
@@ -441,6 +445,7 @@ export global Player {
     in property <string> context-title;
     in property <image> art;
     in property <image> art-large;
+    in property <color> art-color: #3a3a3a;
     in property <bool> explicit;
     in property <bool> saved;
     in property <bool> playing;
@@ -468,6 +473,8 @@ export global Shell {
     in-out property <bool> library-expanded: false;
     in property <bool> mini;
     in property <bool> fullscreen;
+    in-out property <bool> fullscreen-lyrics;
+    callback fullscreen-lyrics-changed();
 
     callback drag();
     callback minimize();
@@ -503,4 +510,131 @@ export global Panels {
     callback transfer(string);
     callback open-url(string);
     callback toggle-lyrics();
+}
+
+export struct PluginFinding {
+    level: string,
+    text: string,
+}
+
+export struct PluginInfo {
+    id: string,
+    kind: string,
+    name: string,
+    version: string,
+    author: string,
+    author-url: string,
+    repository: string,
+    repository-label: string,
+    homepage: string,
+    homepage-label: string,
+    description: string,
+    permissions: string,
+    access: [string],
+    error: string,
+    enabled: bool,
+    running: bool,
+    valid: bool,
+    risk: string,
+    risk-title: string,
+    findings: [PluginFinding],
+    endpoints: string,
+    icon: image,
+    has-icon: bool,
+    letter: string,
+    tint: color,
+    swatch-base: color,
+    swatch-surface: color,
+    swatch-raised: color,
+    swatch-accent: color,
+    swatch-text: color,
+    swatch-dim: color,
+    folder: string,
+}
+
+export struct PluginControl {
+    plugin: string,
+    id: string,
+    label: string,
+    icon: string,
+    active: bool,
+}
+
+export struct PluginPageLink {
+    plugin: string,
+    id: string,
+    title: string,
+    icon: string,
+}
+
+export struct PluginBlock {
+    kind: string,
+    id: string,
+    text: string,
+    sub: string,
+    value: float,
+    min: float,
+    max: float,
+    input: string,
+    on: bool,
+    primary: bool,
+    image-url: string,
+    art: image,
+}
+
+export struct PluginLog {
+    plugin: string,
+    level: string,
+    text: string,
+}
+
+export global Plugins {
+    in property <bool> system;
+    in property <[PluginInfo]> shown;
+    in property <int> plugin-count;
+    in property <int> theme-count;
+    in property <int> attention-count;
+    in property <int> running-count;
+    in property <string> active-theme;
+    in property <string> tab: "plugins";
+    in property <string> filter: "all";
+    in-out property <string> query;
+    in property <PluginInfo> selected;
+    in property <bool> has-selected;
+    in property <bool> dropping;
+    in property <bool> installing;
+    in property <string> install-error;
+    in-out property <bool> link-open;
+    in property <[PluginControl]> topbar;
+    in property <[PluginControl]> playbar;
+    in property <[PluginPageLink]> pages;
+    in property <string> page-plugin;
+    in property <string> page-id;
+    in property <string> page-title;
+    in property <[PluginBlock]> blocks;
+    in property <[PluginLog]> logs;
+    in property <string> folder;
+    in-out property <bool> dev-mode;
+
+    callback system-changed(bool);
+    callback toggle(string, bool);
+    callback click(string, string);
+    callback action(string, string);
+    callback open-page(string, string);
+    callback open-manager();
+    callback open-folder();
+    callback reload();
+    callback clear-logs();
+    callback dev-mode-changed(bool);
+    callback set-tab(string);
+    callback set-filter(string);
+    callback search(string);
+    callback select(string);
+    callback uninstall(string);
+    callback open-link(string);
+    callback open-plugin-folder(string);
+    callback install-file();
+    callback install-link(string);
+    callback cancel-link();
+    callback use-default-theme();
 }

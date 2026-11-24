@@ -84,7 +84,7 @@ impl Images {
 
 const MAX_BYTES: u64 = 8 * 1024 * 1024;
 
-fn trusted(url: &str) -> bool {
+pub fn trusted(url: &str) -> bool {
     let Ok(parsed) = reqwest::Url::parse(url) else { return false };
     if parsed.scheme() != "https" || !parsed.username().is_empty() || parsed.password().is_some() || parsed.port().is_some() {
         return false;

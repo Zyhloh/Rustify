@@ -2,7 +2,7 @@
 
 A native Spotify desktop client for Windows, written in Rust.
 
-Rustify reimplements the Spotify desktop app with a native [Slint](https://slint.dev) interface. Audio is played through Spotify's official Web Playback SDK, so it works with any Spotify Premium account.
+Rustify reimplements the Spotify desktop app with a native [Slint](https://slint.dev) interface. Audio is played through Spotify's official Web Playback SDK, so it works with any Spotify Premium account. A built-in plugin system lets anyone extend it, with an API modeled on Spicetify.
 
 Rustify is an independent project. It is not affiliated with or endorsed by Spotify.
 
@@ -16,6 +16,7 @@ Rustify takes a different approach:
 - **librespot is used only for metadata**, such as your library, Liked Songs, lyrics and artist details. It never handles audio, so the audio key problem doesn't apply.
 - **Rustify keeps working when the Web API is rate limited.** Library, Liked Songs, playlists and profile data fall back to Spotify's internal endpoints.
 - **It's a native app.** The interface is a Rust and Slint application rather than a browser wrapper. It uses near-zero CPU when idle.
+- **Plugins and themes are built in.** No patching the client, no reinstalling after updates. Install from GitHub or drag a file onto the window.
 
 | | Rustify | librespot-based clients |
 | --- | --- | --- |
@@ -23,6 +24,7 @@ Rustify takes a different approach:
 | Spotify Connect, DJ, lyrics | Yes | Varies |
 | Survives Web API rate limits | Yes | Usually not |
 | Native UI | Yes | Varies |
+| Plugins and themes | Built in, sandboxed | No |
 
 ## Features
 
@@ -32,8 +34,41 @@ Rustify takes a different approach:
 - Playlist management: create, edit, delete, add and remove tracks
 - Spotify DJ, synced lyrics, credits and friend activity
 - 6-band equalizer with presets, volume normalization, Very High / High streaming quality
-- Miniplayer and full screen view
+- Miniplayer, and a full screen view with synced lyrics
+- Plugins and themes: install from a file, GitHub or drag and drop, with a safety check and a Spicetify compatibility layer
 - Disk caching and request pacing to stay within Spotify API rate limits
+
+## Plugins and themes
+
+Rustify has a native add-on system with a Spicetify-style API. Turn it on under Settings, **Plugins and themes**, and a Plugins & themes page appears next to your notifications.
+
+Plugins are plain JavaScript running in a sandboxed engine inside the app. They can:
+
+- add buttons to the top bar and the player bar, with their own icons
+- add items to track, album, playlist and artist menus
+- add full pages built from Rustify's own components, so they look like the rest of the app
+- react to song changes, play and pause, and progress
+- control playback, read Spotify Web API data and keep their own settings
+
+Themes recolor the whole app and switch instantly. They're colors only and can't run code.
+
+```js
+Rustify.Player.addEventListener("songchange", data => {
+  Rustify.showNotification("Now playing " + data.track.name);
+});
+
+Rustify.UI.Playbar.Button("Skip", "next", () => Rustify.Player.next());
+```
+
+Install add-ons from a `.zip`, from a GitHub link, by dragging a file or folder onto the window, or by copying a folder into the plugins folder. Rustify picks up new and changed add-ons while running, and edits to a running plugin load instantly.
+
+Every add-on gets a safety check before you turn it on. Rustify looks for hidden or encoded code, internet access, profile reads and actions taken without you clicking, and archives containing programs are refused. Each add-on's page lists exactly what it can do, its findings, the Spotify data it asks for, and links to its author and source code.
+
+Each plugin runs in its own engine with memory and time limits, permission checks and rate limits. A broken plugin is stopped without affecting the app.
+
+Spicetify extensions can be ported with small changes: `Spicetify.Player`, `ContextMenu.Item`, `Topbar.Button`, `Playbar.Button`, `LocalStorage`, `showNotification` and `CosmosAsync.get` are provided.
+
+See the [plugin guide](docs/PLUGINS.md) for the full API and the [example plugins and themes](examples/plugins).
 
 ## Requirements
 
@@ -78,13 +113,14 @@ For development, `run.bat` starts the API and client with live reload using [bac
 | `client` | Slint desktop UI. Launches and communicates with the local API. |
 | `api` | Local axum service bound to `127.0.0.1`. Handles authentication, the Spotify Web API, library data through [librespot](https://github.com/librespot-org/librespot), and playback through a hidden WebView2 running the Web Playback SDK. |
 
-User data is stored in `%LOCALAPPDATA%\Rustify`.
+User data is stored in `%LOCALAPPDATA%\Rustify`. Plugins live in `%LOCALAPPDATA%\Rustify\plugins`.
 
 ## Security
 
 - Tokens are encrypted at rest with Windows DPAPI.
 - The local API accepts connections only from localhost, requires a per-session key, validates the Host header and all input.
 - Rustify only communicates with Spotify. There is no telemetry.
+- Plugins run sandboxed with no file system, network or process access. Playback control, Spotify data and theming each need a permission the user approves.
 
 ## Limitations
 

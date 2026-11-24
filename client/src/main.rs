@@ -16,6 +16,7 @@ mod podcast;
 mod prefs;
 mod sidecar;
 mod panels;
+mod plugins;
 mod search;
 mod state;
 mod tray;
@@ -64,6 +65,7 @@ fn main() -> anyhow::Result<()> {
     prefs::load(&app);
     let recent_keys = search::install(&app);
     bindings::bind(&app, &ctx);
+    plugins::install(&app, &ctx);
     ctx.load_images(recent_keys);
     if ready {
         ctx.spawn(ctx.clone().boot());
@@ -96,6 +98,7 @@ fn main() -> anyhow::Result<()> {
     slint::run_event_loop_until_quit()?;
     window::save(&app);
     runtime.shutdown_timeout(Duration::from_millis(200));
+    plugins::shutdown();
     sidecar::stop();
     Ok(())
 }

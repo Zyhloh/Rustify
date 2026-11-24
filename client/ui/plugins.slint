@@ -1,0 +1,204 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { PillButton, Scroller, Slider } from "components.slint";
+import { Plugins, PluginBlock } from "store.slint";
+
+export component Toggle inherits Rectangle {
+    in property <bool> on;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+
+    width: 40px;
+    height: 22px;
+    border-radius: 11px;
+    opacity: root.enabled ? 1 : 0.4;
+    background: root.on ? (ta.has-hover ? Theme.accent-hover : Theme.accent) : (ta.has-hover ? #8a8a8a : #727272);
+    animate background { duration: Theme.medium; }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.toggled(!root.on); }
+    }
+
+    Rectangle {
+        x: root.on ? root.width - self.width - 3px : 3px;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        background: root.on ? Theme.base : Theme.text;
+        animate x { duration: Theme.fast; easing: ease-out; }
+    }
+}
+
+component Block inherits VerticalLayout {
+    in property <PluginBlock> data;
+
+    if root.data.kind == "heading": Text {
+        text: root.data.text;
+        color: Theme.text;
+        font-size: 24px;
+        font-weight: 800;
+        wrap: word-wrap;
+    }
+
+    if root.data.kind == "text": VerticalLayout {
+        spacing: 2px;
+        Text { text: root.data.text; color: Theme.text; font-size: 14px; wrap: word-wrap; }
+        if root.data.sub != "": Text { text: root.data.sub; color: Theme.text-dim; font-size: 13px; wrap: word-wrap; }
+    }
+
+    if root.data.kind == "button": HorizontalLayout {
+        alignment: start;
+        PillButton {
+            text: root.data.text;
+            primary: root.data.primary;
+            outline: !root.data.primary;
+            clicked => { Plugins.action(root.data.id, ""); }
+        }
+    }
+
+    if root.data.kind == "toggle": HorizontalLayout {
+        spacing: 24px;
+        min-height: 40px;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text { text: root.data.text; color: Theme.text; font-size: 14px; wrap: word-wrap; }
+            if root.data.sub != "": Text { text: root.data.sub; color: Theme.text-dim; font-size: 12px; wrap: word-wrap; }
+        }
+        Toggle {
+            y: 9px;
+            on: root.data.on;
+            toggled(v) => { Plugins.action(root.data.id, v ? "true" : "false"); }
+        }
+    }
+
+    if root.data.kind == "slider": VerticalLayout {
+        spacing: 8px;
+        HorizontalLayout {
+            Text { horizontal-stretch: 1; text: root.data.text; color: Theme.text; font-size: 14px; }
+            Text { text: round(root.data.value * 100) / 100; color: Theme.text-dim; font-size: 13px; }
+        }
+        Slider {
+            value: (root.data.value - root.data.min) / (root.data.max - root.data.min);
+            committed(v) => { Plugins.action(root.data.id, root.data.min + v * (root.data.max - root.data.min)); }
+        }
+    }
+
+    if root.data.kind == "input": Rectangle {
+        height: 40px;
+        border-radius: 4px;
+        background: #ffffff1a;
+        border-width: 1px;
+        border-color: field.has-focus ? #ffffff80 : transparent;
+
+        if field.text == "": Text {
+            x: 12px;
+            text: root.data.sub;
+            color: Theme.text-dim;
+            font-size: 14px;
+        }
+
+        field := TextInput {
+            x: 12px;
+            width: parent.width - 24px;
+            height: parent.height;
+            vertical-alignment: center;
+            single-line: true;
+            text: root.data.input;
+            color: Theme.text;
+            font-size: 14px;
+            accepted => { Plugins.action(root.data.id, "\"" + self.text + "\""); }
+        }
+    }
+
+    if root.data.kind == "row": Rectangle {
+        height: 56px;
+        border-radius: 4px;
+        background: row-ta.has-hover ? #ffffff1a : transparent;
+        animate background { duration: Theme.fast; }
+
+        row-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Plugins.action(root.data.id, ""); }
+        }
+
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            spacing: 12px;
+
+            if root.data.image-url != "": Rectangle {
+                y: 8px;
+                width: 40px;
+                height: 40px;
+                border-radius: 4px;
+                background: Theme.surface-high;
+                clip: true;
+                Image { width: 100%; height: 100%; source: root.data.art; image-fit: cover; }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                Text { text: root.data.text; color: Theme.text; font-size: 15px; overflow: elide; }
+                if root.data.sub != "": Text { text: root.data.sub; color: Theme.text-dim; font-size: 13px; overflow: elide; }
+            }
+        }
+    }
+
+    if root.data.kind == "divider": Rectangle {
+        height: 17px;
+        Rectangle { height: 1px; background: #ffffff1a; }
+    }
+
+    if root.data.kind == "image" && root.data.image-url != "": HorizontalLayout {
+        alignment: start;
+        Rectangle {
+            width: min(320px, parent.width);
+            height: self.width;
+            border-radius: 8px;
+            background: Theme.surface-high;
+            clip: true;
+            Image { width: 100%; height: 100%; source: root.data.art; image-fit: cover; }
+        }
+    }
+}
+
+export component PluginPage inherits Rectangle {
+    max-width: 100000px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    Scroller {
+        content-height: body.preferred-height;
+
+        body := VerticalLayout {
+            width: parent.width;
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 32px;
+            padding-bottom: 32px;
+            spacing: 16px;
+
+            Text {
+                text: Plugins.page-title;
+                color: Theme.text;
+                font-size: 32px;
+                font-weight: 800;
+                letter-spacing: -1px;
+            }
+
+            if Plugins.blocks.length == 0: Text {
+                text: "This plugin hasn't added anything to its page yet.";
+                color: Theme.text-dim;
+                font-size: 14px;
+            }
+
+            for block in Plugins.blocks: Block { data: block; }
+        }
+    }
+}

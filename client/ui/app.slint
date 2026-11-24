@@ -1,5 +1,6 @@
 import "../assets/fonts/Figtree.ttf";
 import { Theme } from "theme.slint";
+export { Theme }
 import { Icon, Icons } from "icons.slint";
 import { PillButton } from "components.slint";
 import { TopBar, Chrome } from "topbar.slint";
@@ -16,9 +17,13 @@ import { LyricsPage } from "lyrics.slint";
 import { ShowPage } from "show.slint";
 import { FullscreenView, MiniView } from "views.slint";
 import { NewsPage } from "news.slint";
+import { PluginPage } from "plugins.slint";
+import { ExtensionsPage, ExtensionPage, DropOverlay } from "extensions.slint";
 import { AccountMenu, ProfilePage, HistoryPage, SettingsPage, ElsewhereBar, SetupOverlay } from "account.slint";
 import { ContextMenu, ToastBar, CreditsDialog } from "menu.slint";
 import { ItemMenuView, EditDialog, ConfirmDialog } from "items.slint";
+import { Plugins, PluginInfo, PluginFinding, PluginControl, PluginPageLink, PluginBlock, PluginLog } from "store.slint";
+export { Plugins, PluginInfo, PluginFinding, PluginControl, PluginPageLink, PluginBlock, PluginLog }
 import { Store, Player, Shell, Picker, Menu, ItemMenu, PlaylistEdit, Confirm, MenuEntry, Toast, Credits, Panels, Prefs, ProfileData, CardData, SectionData, ArtistData, TrackData, CollectionData, PickerItem, NamedItem, ArtistPageData, TileData, LyricLine, DeviceData, FriendData } from "store.slint";
 
 export { Store, Player, Shell, Picker, Menu, ItemMenu, PlaylistEdit, Confirm, MenuEntry, Toast, Credits, Panels, Prefs, ProfileData, CardData, SectionData, ArtistData, TrackData, CollectionData, PickerItem, NamedItem, ArtistPageData, TileData, LyricLine, DeviceData, FriendData }
@@ -328,6 +333,21 @@ export component App inherits Window {
                 min-width: 360px;
             }
 
+            if Store.page == "plugin": PluginPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "extensions": ExtensionsPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "extension": ExtensionPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
             if Store.page == "show-all": ShowAllPage {
                 horizontal-stretch: 1;
                 min-width: 360px;
@@ -415,6 +435,8 @@ export component App inherits Window {
     if Shell.fullscreen && !Shell.mini: FullscreenView { }
 
     if Shell.mini: MiniView { }
+
+    if Plugins.dropping && !Shell.mini: DropOverlay { }
 
     if !Shell.mini: ToastBar {
         x: (root.width - self.width) / 2;

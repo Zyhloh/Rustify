@@ -69,6 +69,8 @@ pub struct NowPlaying {
     pub uri: String,
     pub name: String,
     pub artists: Vec<ArtistRef>,
+    #[serde(default)]
+    pub album: String,
     pub image_small: Option<String>,
     pub image_large: Option<String>,
     pub duration_ms: u32,

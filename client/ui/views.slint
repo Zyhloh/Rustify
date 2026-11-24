@@ -1,103 +1,98 @@
 import { Theme, Fmt } from "theme.slint";
 import { Icon, Icons } from "icons.slint";
 import { IconButton, Slider, LikeButton } from "components.slint";
-import { PlayButton, RepeatButton } from "playerbar.slint";
-import { Player, Shell } from "store.slint";
+import { PlayButton, PlayerBar } from "playerbar.slint";
+import { Player, Shell, Panels } from "store.slint";
 
-component Backdrop inherits Rectangle {
-    background: #000000;
-    clip: true;
-
-    Image {
-        width: max(root.width, root.height) * 1.4;
-        height: self.width;
-        x: (root.width - self.width) / 2;
-        y: (root.height - self.height) / 2;
-        source: Player.art-large;
-        image-fit: cover;
-        opacity: Player.art-large.width > 0 ? 0.55 : 0;
-        animate opacity { duration: 600ms; }
+component FullscreenLyrics inherits Rectangle {
+    property <length> column: min(980px, root.width - 96px);
+    property <length> follow-y: 0px;
+    animate follow-y { duration: 420ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    changed follow-y => {
+        flick.content-y = -max(0px, min(root.follow-y, flick.content-height - flick.height));
     }
 
-    Rectangle {
-        background: @linear-gradient(180deg, #000000a6 0%, #00000059 40%, #000000e6 100%);
-    }
-}
+    flick := Flickable {
+        visible: Panels.lyrics-state == "ready";
+        content-width: root.width;
+        content-height: lines.preferred-height;
 
-component Controls inherits HorizontalLayout {
-    in property <length> play-size: 56px;
-    in property <length> icon-size: 22px;
+        lines := VerticalLayout {
+            x: (root.width - root.column) / 2;
+            width: root.column;
+            padding-top: root.height * 0.3;
+            padding-bottom: root.height * 0.5;
+            spacing: 28px;
 
-    alignment: center;
-    spacing: root.play-size * 0.4;
+            for line in Panels.lyrics: Rectangle {
+                property <bool> sung: Panels.lyrics-synced && Player.position >= line.end;
+                property <bool> current: Panels.lyrics-synced && Player.position >= line.start && Player.position < line.end;
+                changed current => {
+                    if self.current {
+                        root.follow-y = self.y - flick.height * 0.32;
+                    }
+                }
 
-    IconButton {
-        y: (root.play-size - self.height) / 2;
-        icon: Icons.shuffle;
-        icon-size: root.icon-size;
-        dot: true;
-        active: Player.shuffle;
-        enabled: Player.ready;
-        idle-color: #ffffffb3;
-        clicked => { Player.toggle-shuffle(); }
-    }
+                height: text.preferred-height;
 
-    IconButton {
-        y: (root.play-size - self.height) / 2;
-        icon: Icons.prev;
-        filled: true;
-        icon-size: root.icon-size;
-        enabled: Player.ready;
-        idle-color: #ffffffd9;
-        clicked => { Player.prev(); }
-    }
+                ta := TouchArea {
+                    mouse-cursor: Panels.lyrics-synced ? pointer : default;
+                    clicked => {
+                        if Panels.lyrics-synced {
+                            Player.seek(line.start);
+                        }
+                    }
+                }
 
-    PlayButton { size: root.play-size; }
+                text := Text {
+                    width: parent.width;
+                    text: line.text == "" ? "♪" : line.text;
+                    wrap: word-wrap;
+                    font-size: min(56px, max(30px, root.width / 30));
+                    font-weight: 800;
+                    letter-spacing: -0.6px;
+                    color: !Panels.lyrics-synced ? #ffffffd9 : parent.current ? #ffffff : parent.sung ? #ffffff73 : ta.has-hover ? #ffffffe6 : #ffffffb3;
+                    animate color { duration: 260ms; }
+                }
+            }
 
-    IconButton {
-        y: (root.play-size - self.height) / 2;
-        icon: Icons.next;
-        filled: true;
-        icon-size: root.icon-size;
-        enabled: Player.ready;
-        idle-color: #ffffffd9;
-        clicked => { Player.next(); }
-    }
-
-    RepeatButton { y: (root.play-size - self.height) / 2; }
-}
-
-component Progress inherits HorizontalLayout {
-    spacing: 8px;
-    height: 16px;
-
-    Text {
-        min-width: 44px;
-        horizontal-alignment: right;
-        vertical-alignment: center;
-        text: Fmt.time(bar.dragging ? bar.shown * Player.duration : Player.position);
-        color: #ffffffb3;
-        font-size: 12px;
+            if Panels.lyrics-provider != "": Text {
+                text: "Lyrics provided by \{Panels.lyrics-provider}";
+                color: #ffffffb3;
+                font-size: 14px;
+            }
+        }
     }
 
-    bar := Slider {
-        horizontal-stretch: 1;
-        value: Player.duration > 0 ? Player.position / Player.duration : 0;
-        committed(v) => { Player.seek(v * Player.duration); }
-    }
+    if Panels.lyrics-state != "ready": VerticalLayout {
+        alignment: center;
+        spacing: 12px;
 
-    Text {
-        min-width: 44px;
-        vertical-alignment: center;
-        text: Fmt.time(Player.duration);
-        color: #ffffffb3;
-        font-size: 12px;
+        Text {
+            horizontal-alignment: center;
+            text: Panels.lyrics-state == "loading" ? "Loading lyrics…" : "No lyrics for this one";
+            color: Theme.text;
+            font-size: 32px;
+            font-weight: 800;
+        }
+
+        if Panels.lyrics-state == "none": Text {
+            horizontal-alignment: center;
+            text: "Spotify doesn't have lyrics for this song yet.";
+            color: #ffffffb3;
+            font-size: 16px;
+        }
     }
 }
 
 export component FullscreenView inherits Rectangle {
-    property <length> art: min(root.height * 0.34, root.width * 0.24);
+    property <length> bar: 72px;
+    property <length> stage-height: root.height - root.bar - 16px;
+    property <length> art: max(160px, min(min(root.stage-height - 200px, root.width * 0.5), 640px));
+    property <bool> lyrics: Shell.fullscreen-lyrics && Player.has-track;
+    property <color> tint: root.lyrics && Panels.lyrics-state == "ready" ? Panels.lyrics-color.mix(#000000, 0.55) : Player.art-color;
 
+    background: #000000;
     forward-focus: keys;
 
     keys := FocusScope {
@@ -114,113 +109,120 @@ export component FullscreenView inherits Rectangle {
             return reject;
         }
 
-        Backdrop { }
+        stage := Rectangle {
+            x: 8px;
+            y: 8px;
+            width: root.width - 16px;
+            height: root.stage-height;
+            border-radius: 8px;
+            clip: true;
+            background: @linear-gradient(180deg, root.tint.brighter(0.12) 0%, root.tint 45%, root.tint.darker(0.3) 100%);
 
-        TouchArea {
-            double-clicked => { Shell.toggle-fullscreen(); }
-        }
+            TouchArea {
+                double-clicked => { Shell.toggle-fullscreen(); }
+            }
 
-        VerticalLayout {
-            x: 48px;
-            y: 40px;
-            width: root.width - 96px;
-            height: 48px;
+            if !root.lyrics: Rectangle {
+                x: (parent.width - root.art) / 2;
+                y: max(72px, (parent.height - root.art) / 2);
+                width: root.art;
+                height: root.art;
+                border-radius: 8px;
+                background: Theme.surface-high;
+                drop-shadow-blur: 64px;
+                drop-shadow-offset-y: 16px;
+                drop-shadow-color: #00000080;
 
-            Text {
-                text: "PLAYING FROM";
-                color: #ffffffb3;
-                font-size: 11px;
-                font-weight: 700;
-                letter-spacing: 1.2px;
+                Rectangle {
+                    border-radius: 8px;
+                    clip: true;
+
+                    Image {
+                        width: 100%;
+                        height: 100%;
+                        source: Player.art-large;
+                        image-fit: cover;
+                        image-rendering: smooth;
+                    }
+                }
+            }
+
+            if root.lyrics: FullscreenLyrics {
+                y: 64px;
+                height: parent.height - 64px;
+            }
+
+            if root.lyrics: Rectangle {
+                y: 0;
+                height: 88px;
+                background: @linear-gradient(180deg, root.tint.brighter(0.12) 45%, root.tint.brighter(0.12).transparentize(1) 100%);
             }
 
             Text {
+                x: 22px;
+                y: 22px;
+                width: parent.width - 260px;
                 text: Player.context-title != "" ? Player.context-title : Player.title;
                 color: Theme.text;
-                font-size: 16px;
+                font-size: 15px;
                 font-weight: 700;
                 overflow: elide;
             }
-        }
 
-        HorizontalLayout {
-            x: 48px;
-            y: root.height - root.art - 160px;
-            width: root.width - 96px;
-            height: root.art;
-            spacing: 32px;
+            HorizontalLayout {
+                x: parent.width - self.preferred-width - 14px;
+                y: 14px;
+                height: 36px;
+                spacing: 4px;
 
-            Rectangle {
-                width: root.art;
-                border-radius: 8px;
-                background: Theme.surface-high;
-                clip: true;
-                drop-shadow-blur: 48px;
-                drop-shadow-color: #000000b3;
-
-                Image {
-                    width: 100%;
-                    height: 100%;
-                    source: Player.art-large;
-                    image-fit: cover;
-                }
-            }
-
-            VerticalLayout {
-                alignment: end;
-                spacing: 8px;
-
-                Text {
-                    text: Player.title;
-                    color: Theme.text;
-                    font-size: min(72px, max(32px, root.width / 22));
-                    font-weight: 800;
-                    letter-spacing: -1.4px;
-                    overflow: elide;
+                IconButton {
+                    icon: Icons.album;
+                    icon-size: 18px;
+                    dot: true;
+                    active: !root.lyrics;
+                    idle-color: #ffffffb3;
+                    clicked => {
+                        Shell.fullscreen-lyrics = false;
+                        Shell.fullscreen-lyrics-changed();
+                    }
                 }
 
-                HorizontalLayout {
-                    alignment: start;
-                    spacing: 12px;
-
-                    Text {
-                        vertical-alignment: center;
-                        text: Player.artists;
-                        color: #ffffffcc;
-                        font-size: 22px;
-                        font-weight: 600;
-                        overflow: elide;
+                IconButton {
+                    icon: Icons.lyrics;
+                    icon-size: 18px;
+                    dot: true;
+                    active: root.lyrics;
+                    enabled: Player.has-track;
+                    idle-color: #ffffffb3;
+                    clicked => {
+                        Shell.fullscreen-lyrics = true;
+                        Shell.fullscreen-lyrics-changed();
                     }
+                }
 
-                    LikeButton {
-                        size: 22px;
-                        liked: Player.saved;
-                        toggled => { Player.save-pressed(); }
+                Rectangle {
+                    width: 17px;
+
+                    Rectangle {
+                        width: 1px;
+                        height: 20px;
+                        background: #ffffff33;
                     }
+                }
+
+                IconButton {
+                    icon: Icons.collapse;
+                    icon-size: 18px;
+                    idle-color: #ffffffb3;
+                    clicked => { Shell.toggle-fullscreen(); }
                 }
             }
         }
 
-        Progress {
-            x: 48px;
-            y: root.height - 104px;
-            width: root.width - 96px;
-        }
-
-        Controls {
-            x: 0;
-            y: root.height - 76px;
+        PlayerBar {
+            y: root.height - root.bar - 4px;
             width: root.width;
-            height: 56px;
-        }
-
-        IconButton {
-            x: root.width - 48px - self.width;
-            y: root.height - 64px;
-            icon: Icons.collapse;
-            icon-size: 20px;
-            idle-color: #ffffffb3;
-            clicked => { Shell.toggle-fullscreen(); }
+            background: #000000;
         }
     }
 }

@@ -1,0 +1,11 @@
+{
+  "id": "now-playing-tools",
+  "name": "Now Playing Tools",
+  "version": "1.1.0",
+  "author": { "name": "Rustify", "url": "https://github.com/Zyhloh" },
+  "description": "A listening stats page, a mark-this-song button, a track menu item and song change notifications.",
+  "repository": "https://github.com/Zyhloh/Rustify/tree/main/examples/plugins/now-playing-tools",
+  "icon": "icon.png",
+  "main": "index.js",
+  "permissions": ["player", "spotify"]
+}

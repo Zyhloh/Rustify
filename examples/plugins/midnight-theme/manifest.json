@@ -1,0 +1,18 @@
+{
+  "id": "midnight-theme",
+  "type": "theme",
+  "name": "Midnight",
+  "version": "1.0.0",
+  "author": { "name": "Rustify", "url": "https://github.com/Zyhloh" },
+  "description": "Deep blue surfaces with a cyan accent.",
+  "repository": "https://github.com/Zyhloh/Rustify/tree/main/examples/plugins/midnight-theme",
+  "theme": {
+    "base": "#05070d",
+    "surface": "#0c1220",
+    "surface-raised": "#141c2e",
+    "surface-high": "#1c2740",
+    "accent": "#3ec6ff",
+    "accent-hover": "#6fd6ff",
+    "text-dim": "#a7b4cc"
+  }
+}

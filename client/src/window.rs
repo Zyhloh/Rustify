@@ -248,6 +248,21 @@ fn watch_clicks(app: &App) {
     app.window().on_winit_window_event(move |window, event| {
         match event {
             WindowEvent::CursorMoved { position, .. } => cursor.set((position.x, position.y)),
+            WindowEvent::HoveredFile(_) => {
+                if let Some(app) = weak.upgrade() {
+                    crate::plugins::hover_drop(&app, true);
+                }
+            }
+            WindowEvent::HoveredFileCancelled => {
+                if let Some(app) = weak.upgrade() {
+                    crate::plugins::hover_drop(&app, false);
+                }
+            }
+            WindowEvent::DroppedFile(path) => {
+                if let Some(app) = weak.upgrade() {
+                    crate::plugins::dropped(&app, path.clone());
+                }
+            }
             WindowEvent::MouseInput { state: ElementState::Pressed, .. } => {
                 if let Some(app) = weak.upgrade() {
                     let store = app.global::<crate::Store>();

@@ -3,7 +3,7 @@ import { Icon, Icons } from "icons.slint";
 import { IconButton, PillButton, Scroller, PlayFab, Bleed, Chip, Slider } from "components.slint";
 import { Shelf } from "home.slint";
 import { TrackRow } from "collection.slint";
-import { Store, Player, Prefs, Panels } from "store.slint";
+import { Store, Player, Prefs, Panels, Plugins } from "store.slint";
 import { Chrome } from "topbar.slint";
 
 component MenuLine inherits Rectangle {
@@ -792,6 +792,39 @@ export component SettingsPage inherits Rectangle {
                             active: Prefs.on-close == choice.key;
                             clicked => { Prefs.on-close = choice.key; Prefs.changed(); }
                         }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 12px;
+                Group { text: "Plugins and themes"; }
+                Row {
+                    label: "Enable plugins and themes";
+                    note: "Adds a Plugins & themes page where you can install add-ons made by the community. Plugins run in a sandbox and only get the access you approve.";
+                    Switch {
+                        y: 9px;
+                        on: Plugins.system;
+                        toggled(v) => { Plugins.system-changed(v); }
+                    }
+                }
+                if Plugins.system: Row {
+                    label: "Manage plugins and themes";
+                    note: "\{Plugins.plugin-count} \{Plugins.plugin-count == 1 ? "plugin" : "plugins"} and \{Plugins.theme-count} \{Plugins.theme-count == 1 ? "theme" : "themes"} installed";
+                    PillButton {
+                        y: 4px;
+                        outline: true;
+                        text: "Open";
+                        clicked => { Plugins.open-manager(); }
+                    }
+                }
+                if Plugins.system: Row {
+                    label: "Developer mode";
+                    note: "Shows each plugin's console output and errors on its page while you build one.";
+                    Switch {
+                        y: 9px;
+                        on: Plugins.dev-mode;
+                        toggled(v) => { Plugins.dev-mode = v; Plugins.dev-mode-changed(v); }
                     }
                 }
             }

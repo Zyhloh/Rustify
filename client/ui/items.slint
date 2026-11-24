@@ -186,7 +186,7 @@ export component EditDialog inherits Rectangle {
         width: min(524px, root.width - 48px);
         height: body.preferred-height;
         border-radius: 8px;
-        background: #282828;
+        background: Theme.surface-high;
         drop-shadow-blur: 32px;
         drop-shadow-color: #000000b3;
         transform-scale: PlaylistEdit.open ? 1 : 0.96;
@@ -323,11 +323,13 @@ export component ConfirmDialog inherits Rectangle {
         clicked => { Confirm.cancel(); }
     }
 
+    property <length> dialog-width: min(Confirm.notes.length > 0 ? 480px : 420px, root.width - 48px);
+
     Rectangle {
-        width: min(420px, root.width - 48px);
+        width: root.dialog-width;
         height: body.preferred-height;
         border-radius: 8px;
-        background: Theme.text;
+        background: Theme.surface-high;
         drop-shadow-blur: 32px;
         drop-shadow-color: #000000b3;
         transform-scale: Confirm.open ? 1 : 0.96;
@@ -341,7 +343,7 @@ export component ConfirmDialog inherits Rectangle {
 
             Text {
                 text: Confirm.title;
-                color: #000000;
+                color: Theme.text;
                 font-size: 24px;
                 font-weight: 800;
                 wrap: word-wrap;
@@ -349,9 +351,26 @@ export component ConfirmDialog inherits Rectangle {
 
             Text {
                 text: Confirm.body;
-                color: #000000b3;
+                color: Theme.text-dim;
                 font-size: 15px;
                 wrap: word-wrap;
+            }
+
+            for note in Confirm.notes: HorizontalLayout {
+                spacing: 10px;
+                Icon {
+                    y: 1px;
+                    d: Icons.warning;
+                    size: 18px;
+                    color: Confirm.danger ? #f15e6c : #f59b23;
+                }
+                Text {
+                    width: root.dialog-width - 64px - 28px;
+                    text: note;
+                    color: Theme.text;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
             }
 
             HorizontalLayout {
@@ -363,11 +382,11 @@ export component ConfirmDialog inherits Rectangle {
                     width: cancel-text.preferred-width + 48px;
                     height: 48px;
                     border-radius: 24px;
-                    background: cancel-ta.has-hover ? #0000000f : transparent;
+                    background: cancel-ta.has-hover ? Theme.tile : transparent;
 
                     cancel-text := Text {
                         text: "Cancel";
-                        color: #000000;
+                        color: Theme.text;
                         font-size: 16px;
                         font-weight: 700;
                     }
@@ -382,13 +401,13 @@ export component ConfirmDialog inherits Rectangle {
                     width: ok-text.preferred-width + 48px;
                     height: 48px;
                     border-radius: 24px;
-                    background: ok-ta.has-hover ? Theme.accent-hover : Theme.accent;
+                    background: Confirm.danger ? (ok-ta.has-hover ? #f0293c : #e22134) : ok-ta.has-hover ? Theme.accent-hover : Theme.accent;
                     transform-scale: ok-ta.pressed ? 0.97 : ok-ta.has-hover ? 1.03 : 1;
                     animate transform-scale { duration: Theme.fast; }
 
                     ok-text := Text {
                         text: Confirm.action-label;
-                        color: #000000;
+                        color: Confirm.danger ? #ffffff : Theme.base;
                         font-size: 16px;
                         font-weight: 700;
                     }

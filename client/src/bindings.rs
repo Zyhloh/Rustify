@@ -14,7 +14,7 @@ pub fn bind(app: &App, ctx: &Ctx) {
     bind_items(app, ctx);
     bind_account(app, ctx);
     bind_menu(app, ctx);
-    bind_shell(app);
+    bind_shell(app, ctx);
 }
 
 fn bind_store(app: &App, ctx: &Ctx) {
@@ -448,14 +448,112 @@ fn bind_items(app: &App, ctx: &Ctx) {
     let (c, weak) = (ctx.clone(), app.as_weak());
     confirm.on_accept(move || {
         if let Some(app) = weak.upgrade() {
-            crate::items::confirm_delete(&app, &c);
+            crate::items::confirm(&app, &c);
         }
     });
 
     let weak = app.as_weak();
     confirm.on_cancel(move || {
         if let Some(app) = weak.upgrade() {
-            app.global::<crate::Confirm>().set_open(false);
+            crate::items::cancel_confirm(&app);
+        }
+    });
+
+    let plugins = app.global::<crate::Plugins>();
+    let weak = app.as_weak();
+    plugins.on_toggle(move |id, on| {
+        if let Some(app) = weak.upgrade() {
+            if on && crate::plugins::needs_prompt(&id) {
+                crate::items::ask_enable_plugin(&app, &id);
+            } else {
+                crate::plugins::set_enabled(&app, &id, on);
+            }
+        }
+    });
+    plugins.on_click(|plugin, id| crate::plugins::click(&plugin, &id));
+    plugins.on_action(|id, value| crate::plugins::page_action(&id, &value));
+    let weak = app.as_weak();
+    plugins.on_open_page(move |plugin, id| {
+        if let Some(app) = weak.upgrade() {
+            pages::push(&app, pages::Route::Plugin { plugin: plugin.into(), id: id.into() });
+        }
+    });
+    let weak = app.as_weak();
+    plugins.on_open_manager(move || {
+        if let Some(app) = weak.upgrade() {
+            pages::push(&app, pages::Route::Extensions);
+        }
+    });
+    plugins.on_open_folder(crate::plugins::open_folder);
+    let weak = app.as_weak();
+    plugins.on_reload(move || {
+        if let Some(app) = weak.upgrade() {
+            crate::plugins::reload(&app);
+            crate::menu::toast(&app, "Plugins reloaded");
+        }
+    });
+    plugins.on_clear_logs(crate::plugins::clear_logs);
+    plugins.on_dev_mode_changed(crate::plugins::set_dev_mode);
+    let weak = app.as_weak();
+    plugins.on_system_changed(move |on| {
+        if let Some(app) = weak.upgrade() {
+            crate::plugins::set_system(&app, on);
+        }
+    });
+    let weak = app.as_weak();
+    plugins.on_set_tab(move |tab| {
+        if let Some(app) = weak.upgrade() {
+            crate::plugins::set_tab(&app, &tab);
+        }
+    });
+    let weak = app.as_weak();
+    plugins.on_set_filter(move |filter| {
+        if let Some(app) = weak.upgrade() {
+            crate::plugins::set_filter(&app, &filter);
+        }
+    });
+    let weak = app.as_weak();
+    plugins.on_search(move |query| {
+        if let Some(app) = weak.upgrade() {
+            crate::plugins::set_query(&app, &query);
+        }
+    });
+    let weak = app.as_weak();
+    plugins.on_select(move |id| {
+        if let Some(app) = weak.upgrade() {
+            pages::push(&app, pages::Route::Extension { id: id.into() });
+        }
+    });
+    let weak = app.as_weak();
+    plugins.on_uninstall(move |id| {
+        if let Some(app) = weak.upgrade() {
+            crate::items::ask_uninstall_plugin(&app, &id);
+        }
+    });
+    plugins.on_open_link(|url| crate::plugins::open_link(&url));
+    plugins.on_open_plugin_folder(|id| crate::plugins::open_plugin_folder(&id));
+    let weak = app.as_weak();
+    plugins.on_install_file(move || {
+        if let Some(app) = weak.upgrade() {
+            crate::plugins::install_file(&app);
+        }
+    });
+    let weak = app.as_weak();
+    plugins.on_install_link(move |url| {
+        if let Some(app) = weak.upgrade() {
+            crate::plugins::install_link(&app, &url);
+        }
+    });
+    let weak = app.as_weak();
+    plugins.on_cancel_link(move || {
+        if let Some(app) = weak.upgrade() {
+            crate::plugins::cancel_install_link(&app);
+        }
+    });
+    let weak = app.as_weak();
+    plugins.on_use_default_theme(move || {
+        if let Some(app) = weak.upgrade() {
+            crate::plugins::use_default_theme(&app);
         }
     });
 }
@@ -791,7 +889,7 @@ fn bind_player(app: &App, ctx: &Ctx) {
     });
 }
 
-fn bind_shell(app: &App) {
+fn bind_shell(app: &App, ctx: &Ctx) {
     let shell = app.global::<Shell>();
 
     let weak = app.as_weak();
@@ -830,6 +928,16 @@ fn bind_shell(app: &App) {
     shell.on_exit_mini(move || {
         if let Some(app) = weak.upgrade() {
             crate::window::exit_mini(&app);
+        }
+    });
+
+    let (c, weak) = (ctx.clone(), app.as_weak());
+    shell.on_fullscreen_lyrics_changed(move || {
+        if let Some(app) = weak.upgrade() {
+            let track = app.global::<Player>().get_track_id().to_string();
+            if app.global::<Shell>().get_fullscreen_lyrics() && !track.is_empty() && crate::panels::lyrics_track() != track {
+                c.load_lyrics(&app, track);
+            }
         }
     });
 

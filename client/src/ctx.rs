@@ -234,6 +234,7 @@ impl Ctx {
                     };
                     let ctx = self.clone();
                     self.ui(move |app| {
+                        crate::plugins::player_state(&player);
                         if let Some(change) = state::apply_player(app, &player) {
                             crate::menu::track_changed(app, &ctx, &change.track_id);
                             ctx.track_changed(app, &change.track_id);
@@ -558,7 +559,8 @@ impl Ctx {
         if matches!(app.global::<Shell>().get_right_panel().as_str(), "queue" | "nowplaying") {
             self.refresh_panel(app);
         }
-        if app.global::<Store>().get_page() == "lyrics" && crate::panels::lyrics_track() != track_id {
+        let wants_lyrics = app.global::<Store>().get_page() == "lyrics" || (app.global::<Shell>().get_fullscreen() && app.global::<Shell>().get_fullscreen_lyrics());
+        if wants_lyrics && crate::panels::lyrics_track() != track_id {
             self.load_lyrics(app, track_id.to_owned());
         }
     }
@@ -851,7 +853,7 @@ impl Ctx {
             });
             return;
         }
-        if matches!(route, Route::Search | Route::Home | Route::Lyrics | Route::Settings | Route::ShowAll { .. }) {
+        if matches!(route, Route::Search | Route::Home | Route::Lyrics | Route::Settings | Route::ShowAll { .. } | Route::Plugin { .. } | Route::Extensions | Route::Extension { .. }) {
             return;
         }
         if let Route::Artist { id } = route.clone() {

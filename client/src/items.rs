@@ -2,7 +2,7 @@ use crate::menu::{copy, toast};
 use crate::pages::{self, Route};
 use crate::{App, CardData, Confirm, ItemMenu, MenuEntry, PlaylistEdit, Store, ctx::Ctx, state};
 use serde_json::json;
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::{cell::RefCell, rc::Rc};
 
 thread_local! {
@@ -90,6 +90,59 @@ fn entries(app: &App, card: &CardData) -> Vec<MenuEntry> {
     out
 }
 
+enum Pending {
+    Enable(String),
+    Uninstall(String),
+}
+
+thread_local! {
+    static PENDING: RefCell<Option<Pending>> = const { RefCell::new(None) };
+}
+
+fn open_confirm(app: &App, title: &str, body: &str, action: &str, notes: Vec<String>, danger: bool) {
+    let confirm = app.global::<Confirm>();
+    confirm.set_title(title.into());
+    confirm.set_body(body.into());
+    confirm.set_action_label(action.into());
+    confirm.set_notes(ModelRc::from(Rc::new(VecModel::from(notes.into_iter().map(SharedString::from).collect::<Vec<_>>()))));
+    confirm.set_danger(danger);
+    confirm.set_open(true);
+}
+
+pub fn ask_enable_plugin(app: &App, id: &str) {
+    let Some(ask) = crate::plugins::pending_enable(id) else { return };
+    PENDING.with(|p| *p.borrow_mut() = Some(Pending::Enable(id.to_owned())));
+    let action = if ask.danger { "Turn on anyway" } else { "Turn on" };
+    open_confirm(app, &ask.title, &ask.body, action, ask.notes, ask.danger);
+}
+
+pub fn ask_uninstall_plugin(app: &App, id: &str) {
+    let name = app.global::<crate::Plugins>().get_selected().name.to_string();
+    let name = if name.is_empty() { id.to_owned() } else { name };
+    PENDING.with(|p| *p.borrow_mut() = Some(Pending::Uninstall(id.to_owned())));
+    open_confirm(app, &format!("Remove {name}?"), "This deletes its files and saved settings from this computer.", "Remove", Vec::new(), true);
+}
+
+pub fn confirm(app: &App, ctx: &Ctx) {
+    match PENDING.with(|p| p.borrow_mut().take()) {
+        Some(Pending::Enable(id)) => {
+            app.global::<Confirm>().set_open(false);
+            crate::plugins::set_enabled(app, &id, true);
+        }
+        Some(Pending::Uninstall(id)) => {
+            app.global::<Confirm>().set_open(false);
+            crate::plugins::uninstall(app, &id);
+        }
+        None => confirm_delete(app, ctx),
+    }
+}
+
+pub fn cancel_confirm(app: &App) {
+    PENDING.with(|p| p.borrow_mut().take());
+    app.global::<Confirm>().set_open(false);
+    crate::plugins::refresh_list(app);
+}
+
 fn show(app: &App, list: Vec<MenuEntry>, x: f32, y: f32) {
     let menu = app.global::<ItemMenu>();
     menu.set_entries(ModelRc::from(Rc::new(VecModel::from(list))));
@@ -152,7 +205,7 @@ pub fn open_preset_menu(app: &App, x: f32, y: f32) {
 pub fn open_app_menu(app: &App, x: f32, y: f32) {
     let collapsed = app.global::<crate::Shell>().get_library_collapsed();
     let plain = |id: &str, label: &str, separator: bool| sort_entry(format!("app:{id}"), label, false, separator);
-    let list = vec![
+    let mut list = vec![
         plain("new-playlist", "Create playlist", false),
         plain("news", "What's New", false),
         plain("history", "Recently played", false),
@@ -164,6 +217,24 @@ pub fn open_app_menu(app: &App, x: f32, y: f32) {
         plain("logout", "Log out", true),
         plain("exit", "Exit", false),
     ];
+    if app.global::<crate::Plugins>().get_system() {
+        let at = list.iter().position(|e| e.id == "app:settings").unwrap_or(list.len());
+        list.insert(at, plain("plugins", "Plugins & themes", true));
+        if let Some(settings) = list.get_mut(at + 1) {
+            settings.separator = false;
+        }
+    }
+    let pages = crate::plugins::page_links();
+    if !pages.is_empty() {
+        let at = list.iter().position(|e| e.id == "app:settings").unwrap_or(list.len());
+        let mut extra: Vec<MenuEntry> = pages.iter().map(|(p, id, title)| sort_entry(format!("app:page:{p}:{id}"), title, false, false)).collect();
+        if let Some(first) = extra.first_mut() {
+            first.separator = true;
+        }
+        for (i, e) in extra.into_iter().enumerate() {
+            list.insert(at + i, e);
+        }
+    }
     show(app, list, x, y);
 }
 
@@ -180,13 +251,28 @@ fn app_action(app: &App, key: &str) {
         "settings" => store.invoke_open_settings(),
         "support" => store.invoke_open_external("https://support.spotify.com".into()),
         "logout" => store.invoke_logout(),
-        "exit" => shell.invoke_close(),
-        _ => {}
+        "exit" => {
+            crate::window::save(app);
+            let _ = slint::quit_event_loop();
+        }
+        "plugins" => {
+            pages::push(app, Route::Extensions);
+        }
+        _ => {
+            if let Some((plugin, id)) = key.strip_prefix("page:").and_then(|r| r.split_once(':')) {
+                pages::push(app, Route::Plugin { plugin: plugin.into(), id: id.into() });
+            }
+        }
     }
 }
 
 pub fn open(app: &App, card: CardData, x: f32, y: f32) {
-    let list = entries(app, &card);
+    let mut list = entries(app, &card);
+    let extra = crate::plugins::menu_entries(&card.kind);
+    if let Some(first) = extra.first().cloned() {
+        list.push(MenuEntry { separator: true, ..first });
+        list.extend(extra.into_iter().skip(1));
+    }
     if list.is_empty() {
         return;
     }
@@ -212,6 +298,11 @@ pub fn pick(app: &App, ctx: &Ctx, action: &str) {
     if let Some(name) = action.strip_prefix("eq-preset:") {
         crate::prefs::apply_preset(app, name);
         app.global::<crate::Prefs>().invoke_audio_changed();
+        return;
+    }
+    if action.starts_with("plugin:") {
+        let card = TARGET.with(|t| t.borrow().clone());
+        crate::plugins::menu_pick(action, &card.kind, &card.uri, &card.title);
         return;
     }
     if let Some(key) = action.strip_prefix("app:") {
@@ -276,11 +367,7 @@ pub fn pick(app: &App, ctx: &Ctx, action: &str) {
             edit.set_open(true);
         }
         "delete" => {
-            let confirm = app.global::<Confirm>();
-            confirm.set_title("Delete from Your Library?".into());
-            confirm.set_body(format!("This will delete {} from Your Library.", card.title).into());
-            confirm.set_action_label("Delete".into());
-            confirm.set_open(true);
+            open_confirm(app, "Delete from Your Library?", &format!("This will delete {} from Your Library.", card.title), "Delete", Vec::new(), false);
         }
         _ => {}
     }

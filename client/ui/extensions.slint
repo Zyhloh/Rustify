@@ -1,0 +1,984 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { Chip, IconButton, InlineSearch, PillButton, Scroller } from "components.slint";
+import { Plugins, PluginInfo, Store } from "store.slint";
+import { Toggle } from "plugins.slint";
+
+global Tone {
+    out property <color> review: #f59b23;
+    out property <color> caution: #f15e6c;
+}
+
+component AddonIcon inherits Rectangle {
+    in property <PluginInfo> info;
+    in property <length> size: 48px;
+
+    width: root.size;
+    height: root.size;
+    border-radius: root.size * 0.16;
+    background: root.info.has-icon ? Theme.surface-high : root.info.tint;
+    clip: true;
+
+    if root.info.has-icon: Image {
+        width: 100%;
+        height: 100%;
+        source: root.info.icon;
+        image-fit: cover;
+    }
+
+    if !root.info.has-icon: Text {
+        text: root.info.letter;
+        color: #ffffff;
+        font-size: root.size * 0.42;
+        font-weight: 800;
+    }
+}
+
+component ThemePreview inherits Rectangle {
+    in property <color> base;
+    in property <color> surface;
+    in property <color> raised;
+    in property <color> accent;
+    in property <color> text;
+    in property <color> dim;
+
+    border-radius: 6px;
+    background: root.base;
+    clip: true;
+
+    Rectangle {
+        x: 6px;
+        y: 6px;
+        width: root.width * 0.3;
+        height: root.height - 12px;
+        border-radius: 4px;
+        background: root.surface;
+
+        for i in 4: Rectangle {
+            x: 6px;
+            y: 10px + i * 14px;
+            width: parent.width - 12px - mod(i, 2) * 10px;
+            height: 5px;
+            border-radius: 2.5px;
+            background: root.dim;
+            opacity: 0.6;
+        }
+    }
+
+    Rectangle {
+        x: root.width * 0.3 + 12px;
+        y: 6px;
+        width: root.width * 0.7 - 18px;
+        height: root.height - 12px;
+        border-radius: 4px;
+        background: root.surface;
+
+        Rectangle {
+            x: 8px;
+            y: 10px;
+            width: parent.width * 0.55;
+            height: 8px;
+            border-radius: 4px;
+            background: root.text;
+        }
+
+        for i in 3: Rectangle {
+            x: 8px;
+            y: 28px + i * 12px;
+            width: parent.width * (0.7 - i * 0.15);
+            height: 5px;
+            border-radius: 2.5px;
+            background: root.dim;
+            opacity: 0.7;
+        }
+
+        Rectangle {
+            x: parent.width - 30px;
+            y: parent.height - 30px;
+            width: 22px;
+            height: 22px;
+            border-radius: 11px;
+            background: root.accent;
+        }
+
+        Rectangle {
+            x: 8px;
+            y: parent.height - 16px;
+            width: parent.width * 0.4;
+            height: 4px;
+            border-radius: 2px;
+            background: root.raised;
+
+            Rectangle {
+                x: 0;
+                width: parent.width * 0.6;
+                border-radius: 2px;
+                background: root.accent;
+            }
+        }
+    }
+}
+
+component RiskBadge inherits Rectangle {
+    in property <string> risk;
+    in property <string> label;
+
+    property <color> tone: root.risk == "caution" || root.risk == "broken" ? Tone.caution : Tone.review;
+
+    visible: root.risk == "review" || root.risk == "caution" || root.risk == "broken";
+    width: self.visible ? row.preferred-width + 14px : 0px;
+    height: 20px;
+    border-radius: 10px;
+    background: root.tone.transparentize(0.85);
+
+    row := HorizontalLayout {
+        x: 7px;
+        y: 0px;
+        height: root.height;
+        spacing: 4px;
+
+        Icon {
+            y: (parent.height - self.height) / 2;
+            d: Icons.warning;
+            size: 12px;
+            weight: 1.6px;
+            color: root.tone;
+        }
+
+        Text {
+            vertical-alignment: center;
+            text: root.label;
+            color: root.tone;
+            font-size: 11px;
+            font-weight: 700;
+        }
+    }
+}
+
+component AddonRow inherits Rectangle {
+    in property <PluginInfo> info;
+
+    height: 72px;
+    border-radius: 6px;
+    background: ta.pressed ? Theme.press : ta.has-hover ? Theme.hover : transparent;
+    animate background { duration: Theme.fast; }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Plugins.select(root.info.id); }
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 16px;
+        spacing: 16px;
+
+        AddonIcon {
+            y: 12px;
+            info: root.info;
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 3px;
+
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+
+                Text {
+                    text: root.info.name;
+                    color: root.info.enabled ? Theme.accent : Theme.text;
+                    font-size: 15px;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+
+                if root.info.version != "": Text {
+                    vertical-alignment: center;
+                    text: root.info.version;
+                    color: Theme.text-faint;
+                    font-size: 12px;
+                }
+
+                RiskBadge {
+                    y: 1px;
+                    risk: root.info.error != "" ? "broken" : root.info.risk;
+                    label: root.info.error != "" || root.info.risk == "broken" ? "Error" : root.info.risk == "caution" ? "Potentially harmful" : "Review";
+                }
+            }
+
+            Text {
+                text: !root.info.valid ? root.info.error : (root.info.author != "" ? root.info.author + " • " : "") + (root.info.description != "" ? root.info.description : root.info.permissions);
+                color: !root.info.valid ? Tone.caution : Theme.text-dim;
+                font-size: 13px;
+                overflow: elide;
+            }
+        }
+
+        Toggle {
+            y: 25px;
+            enabled: root.info.valid;
+            on: root.info.enabled;
+            toggled(v) => { Plugins.toggle(root.info.id, v); }
+        }
+    }
+}
+
+component ThemeCard inherits Rectangle {
+    in property <string> name;
+    in property <string> author;
+    in property <bool> active;
+    in property <string> risk;
+    in property <color> base;
+    in property <color> surface;
+    in property <color> raised;
+    in property <color> accent;
+    in property <color> text;
+    in property <color> dim;
+    callback picked();
+    callback apply();
+
+    border-radius: 8px;
+    background: ta.has-hover ? Theme.surface-high : Theme.surface-raised;
+    border-width: 2px;
+    border-color: root.active ? Theme.accent : transparent;
+    animate background, border-color { duration: Theme.fast; }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.picked(); }
+    }
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+        alignment: start;
+
+        ThemePreview {
+            height: 116px;
+            base: root.base;
+            surface: root.surface;
+            raised: root.raised;
+            accent: root.accent;
+            text: root.text;
+            dim: root.dim;
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text { text: root.name; color: Theme.text; font-size: 14px; font-weight: 700; overflow: elide; }
+                Text { text: root.author != "" ? root.author : "Unknown author"; color: Theme.text-dim; font-size: 12px; overflow: elide; }
+            }
+
+            if root.risk == "review" || root.risk == "caution": Icon {
+                y: 4px;
+                d: Icons.warning;
+                size: 16px;
+                color: Tone.review;
+            }
+        }
+
+        HorizontalLayout {
+            alignment: start;
+
+            if root.active: HorizontalLayout {
+                spacing: 6px;
+                height: 32px;
+                Icon { y: 8px; d: Icons.check; size: 16px; weight: 2px; color: Theme.accent; }
+                Text { vertical-alignment: center; text: "In use"; color: Theme.accent; font-size: 14px; font-weight: 700; }
+            }
+
+            if !root.active: PillButton {
+                outline: true;
+                text: "Apply";
+                clicked => { root.apply(); }
+            }
+        }
+    }
+}
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+
+    spacing: 12px;
+
+    Text {
+        text: root.title;
+        color: Theme.text;
+        font-size: 20px;
+        font-weight: 700;
+    }
+
+    @children
+}
+
+component LinkBar inherits Rectangle {
+    height: box.preferred-height;
+    border-radius: 8px;
+    background: Theme.surface-raised;
+
+    box := VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+
+        Text {
+            text: "Install from GitHub";
+            color: Theme.text;
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        Text {
+            text: "Paste a link to a public repository, or to a folder inside one.";
+            color: Theme.text-dim;
+            font-size: 13px;
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 40px;
+                border-radius: 4px;
+                background: #ffffff1a;
+                border-width: 1px;
+                border-color: field.has-focus ? #ffffff80 : transparent;
+
+                if field.text == "": Text {
+                    x: 12px;
+                    text: "https://github.com/name/plugin";
+                    color: Theme.text-faint;
+                    font-size: 14px;
+                }
+
+                field := TextInput {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    height: parent.height;
+                    vertical-alignment: center;
+                    single-line: true;
+                    color: Theme.text;
+                    font-size: 14px;
+                    init => { self.focus(); }
+                    accepted => { Plugins.install-link(self.text); }
+                }
+            }
+
+            PillButton {
+                y: 4px;
+                primary: true;
+                text: Plugins.installing ? "Installing…" : "Install";
+                clicked => { Plugins.install-link(field.text); }
+            }
+
+            PillButton {
+                y: 4px;
+                outline: true;
+                text: "Cancel";
+                clicked => { Plugins.cancel-link(); }
+            }
+        }
+
+        if Plugins.install-error != "": Text {
+            text: Plugins.install-error;
+            color: Tone.caution;
+            font-size: 13px;
+            wrap: word-wrap;
+        }
+    }
+}
+
+component Empty inherits Rectangle {
+    in property <string> icon;
+    in property <string> title;
+    in property <string> body;
+
+    height: 220px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: #ffffff1a;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 10px;
+        padding: 24px;
+
+        HorizontalLayout {
+            alignment: center;
+            Icon { d: root.icon; size: 40px; color: Theme.text-dim; }
+        }
+
+        Text {
+            horizontal-alignment: center;
+            text: root.title;
+            color: Theme.text;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        Text {
+            horizontal-alignment: center;
+            text: root.body;
+            color: Theme.text-dim;
+            font-size: 14px;
+            wrap: word-wrap;
+        }
+    }
+}
+
+export component ExtensionsPage inherits Rectangle {
+    property <length> card: 220px;
+    property <int> columns: max(1, floor((body.width - 64px + 16px) / (root.card + 16px)));
+    property <length> card-width: (body.width - 64px - (root.columns - 1) * 16px) / root.columns;
+    property <length> card-height: 232px;
+
+    max-width: 100000px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    Scroller {
+        content-height: body.preferred-height;
+
+        body := VerticalLayout {
+            width: parent.width;
+            padding-left: 32px;
+            padding-right: 32px;
+            padding-top: 32px;
+            padding-bottom: 40px;
+            spacing: 20px;
+
+            HorizontalLayout {
+                spacing: 16px;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 4px;
+
+                    Text {
+                        text: "Plugins & themes";
+                        color: Theme.text;
+                        font-size: 32px;
+                        font-weight: 800;
+                        letter-spacing: -1px;
+                    }
+
+                    Text {
+                        text: "\{Plugins.plugin-count} \{Plugins.plugin-count == 1 ? "plugin" : "plugins"} and \{Plugins.theme-count} \{Plugins.theme-count == 1 ? "theme" : "themes"} installed, \{Plugins.running-count} on";
+                        color: Theme.text-dim;
+                        font-size: 14px;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    PillButton {
+                        y: 12px;
+                        outline: true;
+                        icon: Icons.folder;
+                        text: "Open folder";
+                        clicked => { Plugins.open-folder(); }
+                    }
+
+                    PillButton {
+                        y: 12px;
+                        outline: true;
+                        icon: Icons.link;
+                        text: "From GitHub";
+                        clicked => { Plugins.link-open = !Plugins.link-open; }
+                    }
+
+                    PillButton {
+                        y: 12px;
+                        primary: true;
+                        icon: Icons.plus;
+                        text: Plugins.installing && !Plugins.link-open ? "Installing…" : "Install from file";
+                        clicked => { Plugins.install-file(); }
+                    }
+                }
+            }
+
+            if Plugins.link-open: LinkBar { }
+
+            if !Plugins.link-open && Plugins.install-error != "": Text {
+                text: Plugins.install-error;
+                color: Tone.caution;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+
+                Chip {
+                    text: "Plugins  \{Plugins.plugin-count}";
+                    active: Plugins.tab == "plugins";
+                    clicked => { Plugins.set-tab("plugins"); }
+                }
+
+                Chip {
+                    text: "Themes  \{Plugins.theme-count}";
+                    active: Plugins.tab == "themes";
+                    clicked => { Plugins.set-tab("themes"); }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                InlineSearch {
+                    expanded: true;
+                    full-width: 240px;
+                    placeholder: Plugins.tab == "themes" ? "Search themes" : "Search plugins";
+                    text <=> Plugins.query;
+                    edited(t) => { Plugins.search(t); }
+                }
+            }
+
+            if Plugins.tab == "plugins": HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+
+                for f in [{ key: "all", label: "All" }, { key: "on", label: "On" }, { key: "off", label: "Off" }]: Chip {
+                    text: f.label;
+                    active: Plugins.filter == f.key;
+                    clicked => { Plugins.set-filter(f.key); }
+                }
+
+                if Plugins.attention-count > 0: Chip {
+                    text: "Needs attention  \{Plugins.attention-count}";
+                    active: Plugins.filter == "attention";
+                    clicked => { Plugins.set-filter("attention"); }
+                }
+            }
+
+            if Plugins.tab == "plugins" && Plugins.shown.length == 0: Empty {
+                icon: Plugins.query != "" || Plugins.filter != "all" ? Icons.search : Icons.puzzle;
+                title: Plugins.query != "" ? "No plugins match \"\{Plugins.query}\"" : Plugins.filter != "all" ? "Nothing here" : "No plugins yet";
+                body: Plugins.query != "" || Plugins.filter != "all" ? "Try a different search or filter." : "Install one from a .zip file or GitHub, or drag it onto this window.";
+            }
+
+            if Plugins.tab == "plugins" && Plugins.shown.length > 0: VerticalLayout {
+                spacing: 2px;
+                for p in Plugins.shown: AddonRow { info: p; }
+            }
+
+            if Plugins.tab == "themes": Rectangle {
+                height: ceil((Plugins.shown.length + (Plugins.query == "" ? 1 : 0)) / root.columns) * (root.card-height + 16px);
+
+                if Plugins.query == "": ThemeCard {
+                    x: 0;
+                    y: 0;
+                    width: root.card-width;
+                    height: root.card-height;
+                    name: "Rustify";
+                    author: "Default theme";
+                    active: Plugins.active-theme == "";
+                    base: #000000;
+                    surface: #121212;
+                    raised: #2a2a2a;
+                    accent: #1ed760;
+                    text: #ffffff;
+                    dim: #b3b3b3;
+                    apply => { Plugins.use-default-theme(); }
+                    picked => { Plugins.use-default-theme(); }
+                }
+
+                for t[i] in Plugins.shown: ThemeCard {
+                    property <int> slot: i + (Plugins.query == "" ? 1 : 0);
+                    x: mod(self.slot, root.columns) * (root.card-width + 16px);
+                    y: floor(self.slot / root.columns) * (root.card-height + 16px);
+                    width: root.card-width;
+                    height: root.card-height;
+                    name: t.name;
+                    author: t.author;
+                    risk: t.risk;
+                    active: Plugins.active-theme == t.id;
+                    base: t.swatch-base;
+                    surface: t.swatch-surface;
+                    raised: t.swatch-raised;
+                    accent: t.swatch-accent;
+                    text: t.swatch-text;
+                    dim: t.swatch-dim;
+                    apply => { Plugins.toggle(t.id, true); }
+                    picked => { Plugins.select(t.id); }
+                }
+            }
+
+            if Plugins.tab == "themes" && Plugins.shown.length == 0 && Plugins.query != "": Text {
+                text: "No themes match \"\{Plugins.query}\".";
+                color: Theme.text-dim;
+                font-size: 14px;
+            }
+
+            Text {
+                text: "Drag a .zip file or a plugin folder onto Rustify to install it. Plugins run in a sandbox and can only use what you allow. Themes only change colors.";
+                color: Theme.text-faint;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+component AccessLine inherits HorizontalLayout {
+    in property <string> text;
+    in property <string> icon: Icons.check;
+    in property <brush> tone: Theme.text-dim;
+
+    spacing: 12px;
+
+    Icon {
+        y: 1px;
+        d: root.icon;
+        size: 18px;
+        color: root.tone;
+    }
+
+    Text {
+        horizontal-stretch: 1;
+        text: root.text;
+        color: Theme.text-dim;
+        font-size: 14px;
+        wrap: word-wrap;
+    }
+}
+
+component LinkText inherits Text {
+    in property <string> url;
+
+    color: ta.has-hover && root.url != "" ? Theme.text : Theme.text-dim;
+    font-size: 14px;
+    font-weight: 600;
+
+    ta := TouchArea {
+        enabled: root.url != "";
+        mouse-cursor: root.url != "" ? pointer : default;
+        clicked => { Plugins.open-link(root.url); }
+    }
+}
+
+export component ExtensionPage inherits Rectangle {
+    property <PluginInfo> p: Plugins.selected;
+    property <bool> theme: root.p.kind == "theme";
+    property <color> risk-tone: root.p.risk == "caution" || root.p.risk == "broken" ? Tone.caution : root.p.risk == "review" ? Tone.review : Theme.accent;
+
+    max-width: 100000px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    if !Plugins.has-selected: Text {
+        text: "This add-on isn't installed anymore.";
+        color: Theme.text-dim;
+        font-size: 16px;
+    }
+
+    if Plugins.has-selected: Scroller {
+        content-height: body.preferred-height;
+
+        body := VerticalLayout {
+            width: parent.width;
+            padding-left: 32px;
+            padding-right: 32px;
+            padding-top: 32px;
+            padding-bottom: 40px;
+            spacing: 28px;
+
+            HorizontalLayout {
+                spacing: 24px;
+
+                if !root.theme: AddonIcon {
+                    info: root.p;
+                    size: 136px;
+                }
+
+                if root.theme: ThemePreview {
+                    width: 216px;
+                    height: 136px;
+                    base: root.p.swatch-base;
+                    surface: root.p.swatch-surface;
+                    raised: root.p.swatch-raised;
+                    accent: root.p.swatch-accent;
+                    text: root.p.swatch-text;
+                    dim: root.p.swatch-dim;
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: end;
+                    spacing: 6px;
+
+                    Text {
+                        text: root.theme ? "Theme" : "Plugin";
+                        color: Theme.text;
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
+
+                    Text {
+                        text: root.p.name;
+                        color: Theme.text;
+                        font-size: 44px;
+                        font-weight: 800;
+                        letter-spacing: -1.5px;
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+
+                        LinkText {
+                            text: root.p.author != "" ? root.p.author : "Unknown author";
+                            url: root.p.author-url;
+                            color: Theme.text;
+                        }
+
+                        if root.p.version != "": Text {
+                            text: "• Version \{root.p.version}";
+                            color: Theme.text-dim;
+                            font-size: 14px;
+                        }
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                alignment: start;
+
+                if root.theme: PillButton {
+                    primary: Plugins.active-theme != root.p.id;
+                    outline: Plugins.active-theme == root.p.id;
+                    text: Plugins.active-theme == root.p.id ? "Use default theme" : "Apply theme";
+                    clicked => {
+                        if Plugins.active-theme == root.p.id {
+                            Plugins.use-default-theme();
+                        } else {
+                            Plugins.toggle(root.p.id, true);
+                        }
+                    }
+                }
+
+                if !root.theme: PillButton {
+                    primary: !root.p.enabled;
+                    outline: root.p.enabled;
+                    text: root.p.enabled ? "Turn off" : "Turn on";
+                    clicked => { Plugins.toggle(root.p.id, !root.p.enabled); }
+                }
+
+                PillButton {
+                    outline: true;
+                    icon: Icons.folder;
+                    text: "Show files";
+                    clicked => { Plugins.open-plugin-folder(root.p.id); }
+                }
+
+                if root.p.repository != "": PillButton {
+                    outline: true;
+                    icon: Icons.external;
+                    text: "Source code";
+                    clicked => { Plugins.open-link(root.p.repository); }
+                }
+
+                if root.p.homepage != "": PillButton {
+                    outline: true;
+                    icon: Icons.external;
+                    text: "Website";
+                    clicked => { Plugins.open-link(root.p.homepage); }
+                }
+
+                IconButton {
+                    y: 0px;
+                    icon: Icons.delete;
+                    ghost: true;
+                    idle-color: Theme.text-dim;
+                    hover-color: Tone.caution;
+                    clicked => { Plugins.uninstall(root.p.id); }
+                }
+            }
+
+            if root.p.error != "": Rectangle {
+                height: err.preferred-height;
+                border-radius: 8px;
+                background: Tone.caution.transparentize(0.88);
+
+                err := HorizontalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+                    Icon { d: Icons.warning; size: 20px; color: Tone.caution; }
+                    Text { horizontal-stretch: 1; text: root.p.error; color: Theme.text; font-size: 14px; wrap: word-wrap; }
+                }
+            }
+
+            if root.p.description != "": Section {
+                title: "About";
+                Text {
+                    text: root.p.description;
+                    color: Theme.text-dim;
+                    font-size: 15px;
+                    wrap: word-wrap;
+                }
+            }
+
+            Section {
+                title: "Safety check";
+
+                Rectangle {
+                    height: safety.preferred-height;
+                    border-radius: 8px;
+                    background: #ffffff08;
+
+                    safety := VerticalLayout {
+                        padding: 20px;
+                        spacing: 14px;
+
+                        HorizontalLayout {
+                            spacing: 12px;
+                            Icon {
+                                d: root.p.risk == "safe" ? Icons.shield : Icons.warning;
+                                size: 24px;
+                                color: root.risk-tone;
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                Text { text: root.p.risk-title; color: Theme.text; font-size: 16px; font-weight: 700; }
+                                Text {
+                                    text: root.theme ? "Themes are colors only and can't run code." : "Rustify checked its code for hidden or encoded code, internet access and actions it can take on its own.";
+                                    color: Theme.text-dim;
+                                    font-size: 13px;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+
+                        for f in root.p.findings: AccessLine {
+                            text: f.text;
+                            icon: f.level == "note" ? Icons.info : Icons.warning;
+                            tone: f.level == "caution" ? Tone.caution : f.level == "review" ? Tone.review : Theme.text-dim;
+                        }
+                    }
+                }
+            }
+
+            Section {
+                title: "What it can do";
+                for line in root.p.access: AccessLine { text: line; }
+            }
+
+            if root.p.endpoints != "": Section {
+                title: "Spotify data it asks for";
+                Text {
+                    text: root.p.endpoints;
+                    color: Theme.text-dim;
+                    font-size: 13px;
+                    font-family: "Consolas";
+                    wrap: word-wrap;
+                }
+            }
+
+            if root.p.repository != "" || root.p.homepage != "": Section {
+                title: "Links";
+                if root.p.repository != "": LinkText { text: root.p.repository-label; url: root.p.repository; }
+                if root.p.homepage != "": LinkText { text: root.p.homepage-label; url: root.p.homepage; }
+            }
+
+            if Plugins.dev-mode && !root.theme: Section {
+                title: "Console";
+
+                Rectangle {
+                    height: 220px;
+                    border-radius: 8px;
+                    background: #0a0a0a;
+                    border-width: 1px;
+                    border-color: #ffffff14;
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+
+                        HorizontalLayout {
+                            Rectangle { horizontal-stretch: 1; }
+                            PillButton { outline: true; text: "Clear"; clicked => { Plugins.clear-logs(); } }
+                        }
+
+                        Scroller {
+                            vertical-stretch: 1;
+                            content-height: lines.preferred-height;
+
+                            lines := VerticalLayout {
+                                width: parent.width;
+                                spacing: 0px;
+
+                                for line in Plugins.logs: Text {
+                                    visible: line.plugin == root.p.id;
+                                    height: self.visible ? self.preferred-height : 0px;
+                                    text: line.text;
+                                    color: line.level == "error" ? Tone.caution : line.level == "warn" ? Tone.review : Theme.text-dim;
+                                    font-size: 12px;
+                                    font-family: "Consolas";
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Text {
+                text: "Installed in plugins\\\{root.p.folder}";
+                color: Theme.text-faint;
+                font-size: 12px;
+            }
+        }
+    }
+}
+
+export component DropOverlay inherits Rectangle {
+    background: #000000b3;
+
+    Rectangle {
+        x: 24px;
+        y: 24px;
+        width: parent.width - 48px;
+        height: parent.height - 48px;
+        border-radius: 12px;
+        border-width: 2px;
+        border-color: Theme.accent;
+        background: Theme.accent.transparentize(0.94);
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 12px;
+
+            HorizontalLayout {
+                alignment: center;
+                Icon { d: Icons.puzzle; size: 56px; color: Theme.accent; }
+            }
+
+            Text {
+                horizontal-alignment: center;
+                text: "Drop to install";
+                color: Theme.text;
+                font-size: 28px;
+                font-weight: 800;
+            }
+
+            Text {
+                horizontal-alignment: center;
+                text: "A .zip file or a folder with a manifest.json";
+                color: Theme.text-dim;
+                font-size: 15px;
+            }
+        }
+    }
+}
