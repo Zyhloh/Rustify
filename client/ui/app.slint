@@ -61,12 +61,11 @@ component LoginOverlay inherits Rectangle {
         alignment: center;
         spacing: 20px;
 
-        Icon {
+        Image {
             x: (parent.width - self.width) / 2;
-            d: Icons.logo;
-            size: 64px;
-            weight: 2px;
-            color: Theme.accent;
+            width: 72px;
+            height: 72px;
+            source: @image-url("../assets/icon.png");
         }
 
         Text {
