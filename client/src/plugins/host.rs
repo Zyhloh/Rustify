@@ -890,4 +890,23 @@ mod tests {
         assert!(ops.iter().any(|o| matches!(o, UiOp::Player { action, .. } if action == "like")));
         assert!(ops.iter().any(|o| matches!(o, UiOp::Log { text, .. } if text == "rejected 2")));
     }
+
+    #[test]
+    fn hook_spam_is_rate_limited() {
+        let (p, ops) = plugin(
+            "spam",
+            &["theme"],
+            "const s = Rustify.UI.NowPlaying.Section('x', 'X');
+             for (let i = 0; i < 5000; i++) {
+                 try { s.render([{ type: 'text', text: String(i) }]); } catch (e) {}
+                 try { Rustify.UI.hide('queue-button'); } catch (e) {}
+                 try { Rustify.Theme.set({ radius: String(i % 25) }); } catch (e) {}
+             }",
+        );
+        assert!(p.is_ok());
+        let delivered = ops.lock().unwrap().iter().filter(|o| matches!(o, UiOp::Section { .. } | UiOp::SectionRender { .. } | UiOp::Hide { .. } | UiOp::Theme { .. })).count();
+        assert!(delivered <= UI_OPS_PER_SECOND as usize, "{delivered}");
+        let (p, _) = plugin("bad-radius", &["theme"], "Rustify.Theme.set({ radius: '9999' })");
+        assert!(p.unwrap_err().contains("radius"));
+    }
 }

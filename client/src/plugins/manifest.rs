@@ -128,10 +128,21 @@ pub const THEME_KEYS: [&str; 15] = [
     "text-faint", "accent", "accent-hover", "danger", "track",
 ];
 
+pub fn radius(value: &str) -> Option<f32> {
+    let n: u8 = value.trim_end_matches("px").parse().ok()?;
+    (n <= 24).then_some(n as f32)
+}
+
 pub fn check_theme(theme: &BTreeMap<String, String>) -> Result<(), String> {
     for (key, value) in theme {
+        if key == "radius" {
+            if radius(value).is_none() {
+                return Err("theme radius must be a number from 0 to 24".into());
+            }
+            continue;
+        }
         if !THEME_KEYS.contains(&key.as_str()) {
-            return Err(format!("unknown theme color \"{key}\""));
+            return Err(format!("unknown theme key \"{key}\""));
         }
         if !valid_color(value) {
             return Err(format!("theme color \"{key}\" must be #rrggbb or #rrggbbaa"));
@@ -295,6 +306,13 @@ mod tests {
         assert!(!valid_color("red"));
         assert!(!valid_color("#12345"));
         assert!(!valid_color("#zzzzzz"));
+        let mut theme = BTreeMap::new();
+        theme.insert("radius".to_owned(), "4".to_owned());
+        assert!(check_theme(&theme).is_ok());
+        theme.insert("radius".to_owned(), "99".to_owned());
+        assert!(check_theme(&theme).is_err());
+        theme.insert("radius".to_owned(), "-1".to_owned());
+        assert!(check_theme(&theme).is_err());
     }
 
     #[test]

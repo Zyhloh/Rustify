@@ -70,6 +70,7 @@ struct State {
     hidden: BTreeMap<String, BTreeSet<String>>,
     themes: BTreeMap<String, BTreeMap<String, String>>,
     defaults: BTreeMap<String, Color>,
+    default_radius: f32,
     open_page: Option<(String, String)>,
     last_state: Option<String>,
     last_track: String,
@@ -176,6 +177,7 @@ pub fn install(app: &App, ctx: &Ctx) {
         s.tx = Some(tx);
         s.ctx = Some(ctx.clone());
         s.defaults = defaults;
+        s.default_radius = theme.get_radius();
         s.saved = saved;
         s.tab = "plugins".into();
         s.filter = "all".into();
@@ -609,9 +611,11 @@ pub fn parse_color(hex: &str) -> Option<Color> {
 fn reset_theme(app: &App) {
     let theme = app.global::<Theme>();
     STATE.with(|s| {
-        for (key, color) in &s.borrow().defaults {
+        let s = s.borrow();
+        for (key, color) in &s.defaults {
             theme_set(&theme, key, *color);
         }
+        theme.set_radius(s.default_radius);
     });
 }
 
@@ -624,7 +628,11 @@ fn reapply_themes(app: &App) {
         ordered.sort_by_key(|(id, _)| kind(id) != Some(Kind::Theme));
         for (_, colors) in ordered {
             for (key, value) in colors {
-                if let Some(color) = parse_color(value) {
+                if key == "radius" {
+                    if let Some(r) = manifest::radius(value) {
+                        theme.set_radius(r);
+                    }
+                } else if let Some(color) = parse_color(value) {
                     theme_set(&theme, key, color);
                 }
             }

@@ -272,7 +272,7 @@ A theme is a manifest with `"type": "theme"` and colors. It has no script and ca
 }
 ```
 
-Plugins can also change colors, either in their manifest with the `theme` permission or from code with `Rustify.Theme.set({ ... })`. Plugin colors are applied on top of the active theme. Colors are `#rrggbb` or `#rrggbbaa`. Turning a theme or plugin off restores the previous colors.
+Plugins can also change colors, either in their manifest with the `theme` permission or from code with `Rustify.Theme.set({ ... })`. Plugin colors are applied on top of the active theme. Colors are `#rrggbb` or `#rrggbbaa`, and `radius` is a number. Turning a theme or plugin off restores the previous look.
 
 Rustify warns when `text` and `base` don't have enough contrast to read comfortably.
 
@@ -293,6 +293,7 @@ Rustify warns when `text` and `base` don't have enough contrast to read comforta
 | `accent-hover` | Hovered accent |
 | `danger` | Destructive actions and errors |
 | `track` | Slider and progress tracks |
+| `radius` | Corner rounding of panels, cards and dialogs, from `0` to `24` (default `8`) |
 
 ## Installing and sharing
 

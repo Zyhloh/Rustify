@@ -4,7 +4,7 @@
   "name": "Ember",
   "version": "1.0.0",
   "author": { "name": "Rustify", "url": "https://github.com/Zyhloh" },
-  "description": "Warm charcoal with Rustify's rust orange accent.",
+  "description": "Warm charcoal with Rustify's rust orange accent and tighter corners.",
   "repository": "https://github.com/Zyhloh/Rustify/tree/main/examples/plugins/ember-theme",
   "theme": {
     "base": "#0c0908",
@@ -14,6 +14,7 @@
     "accent": "#e8743b",
     "accent-hover": "#f28d5a",
     "text-dim": "#c2b3ab",
-    "track": "#55453f"
+    "track": "#55453f",
+    "radius": "4"
   }
 }

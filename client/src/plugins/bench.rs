@@ -161,3 +161,37 @@ fn load_and_unload_cost() {
     report("load example plugin (new engine + prelude + script)", samples);
     tx.send(Cmd::Shutdown).unwrap();
 }
+
+#[test]
+#[ignore]
+fn now_playing_sections_under_load() {
+    let (tx, rx) = harness();
+    let script = "const section = Rustify.UI.NowPlaying.Section('live', 'Live');
+        Rustify.Player.addEventListener('onprogress', d => {
+            section.render(Array.from({ length: 20 }, (_, i) => ({ type: 'row', id: 'r' + i, text: d.track.name + ' ' + i, sub: String(d.position) })));
+        });";
+    for i in 0..3 {
+        load(&tx, &rx, &format!("section-{i}"), &[], script);
+    }
+    drain(&rx);
+    let events = 10_000;
+    let started = Instant::now();
+    for _ in 0..events {
+        tx.send(Cmd::Emit("onprogress".into(), STATE.into())).unwrap();
+    }
+    tx.send(Cmd::Unload("section-0".into())).unwrap();
+    let mut renders = 0;
+    loop {
+        match rx.recv_timeout(Duration::from_secs(30)).unwrap().1 {
+            UiOp::SectionRender { .. } => renders += 1,
+            UiOp::Stopped(p) if p == "section-0" => break,
+            _ => {}
+        }
+    }
+    let elapsed = started.elapsed();
+    println!(
+        "{events} progress events x 3 plugins re-rendering 20-row sections: {elapsed:?} total, {:?} per event, {renders} renders delivered",
+        elapsed / events
+    );
+    tx.send(Cmd::Shutdown).unwrap();
+}
