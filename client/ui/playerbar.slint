@@ -289,7 +289,7 @@ export component PlayerBar inherits Rectangle {
             }
         }
 
-        IconButton {
+        if !Plugins.hidden.now-playing: IconButton {
             y: 20px;
             icon: Icons.panel;
             icon-size: 18px;
@@ -297,7 +297,7 @@ export component PlayerBar inherits Rectangle {
             active: Shell.right-panel == "nowplaying";
             clicked => { Panels.open-panel("nowplaying"); }
         }
-        if root.mid: IconButton {
+        if root.mid && !Plugins.hidden.lyrics: IconButton {
             y: 20px;
             icon: Icons.lyrics;
             icon-size: 18px;
@@ -313,7 +313,7 @@ export component PlayerBar inherits Rectangle {
                 }
             }
         }
-        IconButton {
+        if !Plugins.hidden.queue: IconButton {
             y: 20px;
             icon: Icons.queue;
             icon-size: 18px;
@@ -321,7 +321,7 @@ export component PlayerBar inherits Rectangle {
             active: Shell.right-panel == "queue";
             clicked => { Panels.open-panel("queue"); }
         }
-        IconButton {
+        if !Plugins.hidden.devices: IconButton {
             y: 20px;
             icon: Icons.devices;
             icon-size: 18px;
@@ -353,13 +353,13 @@ export component PlayerBar inherits Rectangle {
         }
 
         if root.roomy: Rectangle { width: 6px; }
-        if root.roomy: IconButton {
+        if root.roomy && !Plugins.hidden.mini-player: IconButton {
             y: 20px;
             icon: Icons.mini-player;
             icon-size: 18px;
             clicked => { Shell.enter-mini(); }
         }
-        if root.roomy: IconButton {
+        if root.roomy && (!Plugins.hidden.fullscreen || Shell.fullscreen): IconButton {
             y: 20px;
             icon: Shell.fullscreen ? Icons.collapse : Icons.fullscreen;
             icon-size: 18px;

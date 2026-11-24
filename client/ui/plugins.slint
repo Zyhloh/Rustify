@@ -31,8 +31,18 @@ export component Toggle inherits Rectangle {
     }
 }
 
-component Block inherits VerticalLayout {
+export component Block inherits VerticalLayout {
     in property <PluginBlock> data;
+    in property <string> plugin;
+    in property <string> section;
+
+    function fire(value: string) {
+        if root.section != "" {
+            Plugins.section-action(root.plugin, root.section, root.data.id, value);
+        } else {
+            Plugins.action(root.data.id, value);
+        }
+    }
 
     if root.data.kind == "heading": Text {
         text: root.data.text;
@@ -54,7 +64,7 @@ component Block inherits VerticalLayout {
             text: root.data.text;
             primary: root.data.primary;
             outline: !root.data.primary;
-            clicked => { Plugins.action(root.data.id, ""); }
+            clicked => { root.fire(""); }
         }
     }
 
@@ -71,7 +81,7 @@ component Block inherits VerticalLayout {
         Toggle {
             y: 9px;
             on: root.data.on;
-            toggled(v) => { Plugins.action(root.data.id, v ? "true" : "false"); }
+            toggled(v) => { root.fire(v ? "true" : "false"); }
         }
     }
 
@@ -83,7 +93,7 @@ component Block inherits VerticalLayout {
         }
         Slider {
             value: (root.data.value - root.data.min) / (root.data.max - root.data.min);
-            committed(v) => { Plugins.action(root.data.id, root.data.min + v * (root.data.max - root.data.min)); }
+            committed(v) => { root.fire(root.data.min + v * (root.data.max - root.data.min)); }
         }
     }
 
@@ -110,7 +120,7 @@ component Block inherits VerticalLayout {
             text: root.data.input;
             color: Theme.text;
             font-size: 14px;
-            accepted => { Plugins.action(root.data.id, "\"" + self.text + "\""); }
+            accepted => { root.fire("\"" + self.text + "\""); }
         }
     }
 
@@ -122,7 +132,7 @@ component Block inherits VerticalLayout {
 
         row-ta := TouchArea {
             mouse-cursor: pointer;
-            clicked => { Plugins.action(root.data.id, ""); }
+            clicked => { root.fire(""); }
         }
 
         HorizontalLayout {

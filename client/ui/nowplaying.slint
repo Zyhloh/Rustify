@@ -1,7 +1,8 @@
 import { Theme, Fmt } from "theme.slint";
 import { Icon, Icons } from "icons.slint";
 import { IconButton, Scroller, LikeButton, PillButton } from "components.slint";
-import { Store, Player, Shell, Panels } from "store.slint";
+import { Block } from "plugins.slint";
+import { Store, Player, Shell, Panels, Plugins } from "store.slint";
 
 export component NowPlayingPanel inherits Rectangle {
     background: Player.voice ? #0d5bd7 : Theme.surface;
@@ -280,6 +281,31 @@ export component NowPlayingPanel inherits Rectangle {
                     spacing: 6px;
                     Text { text: "The DJ doesn't have a queue"; color: Theme.text; font-size: 16px; font-weight: 700; wrap: word-wrap; }
                     Text { text: "Your DJ picks each song for you in the moment. Tap the DJ button in the player bar to switch things up."; color: Theme.text-dim; font-size: 14px; wrap: word-wrap; }
+                }
+            }
+
+            for section in Plugins.sections: Rectangle {
+                border-radius: Theme.radius;
+                background: Theme.surface-raised;
+                height: section-body.preferred-height;
+
+                section-body := VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+
+                    Text {
+                        text: section.title;
+                        color: Theme.text;
+                        font-size: 16px;
+                        font-weight: 700;
+                        overflow: elide;
+                    }
+
+                    for b in section.blocks: Block {
+                        data: b;
+                        plugin: section.plugin;
+                        section: section.id;
+                    }
                 }
             }
 

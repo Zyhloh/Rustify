@@ -102,6 +102,7 @@ Rustify.Player.seek(ms)
 Rustify.Player.setVolume(level)      // 0 to 1
 Rustify.Player.toggleShuffle()
 Rustify.Player.toggleRepeat()
+Rustify.Player.toggleLike()           // save or remove the current song from Liked Songs
 Rustify.Player.getVolume()
 Rustify.Player.isPlaying()
 Rustify.Player.getProgress()         // ms
@@ -159,6 +160,23 @@ const page = Rustify.UI.Page(id, title, icon)
 ```
 
 Adds a page, listed in the app menu (top left "..."). See [Pages and blocks](#pages-and-blocks).
+
+```js
+const section = Rustify.UI.NowPlaying.Section(id, title)
+section.render(blocks)
+section.onAction((id, value) => { ... })
+section.remove()
+```
+
+Adds a card to the now-playing panel on the right, below the song credits. It uses the same blocks as pages, up to 100. A plugin can add 3 sections.
+
+```js
+Rustify.UI.hide("friends-button")
+Rustify.UI.show("friends-button")
+Rustify.UI.elements   // the names below
+```
+
+Hides one of Rustify's own buttons: `friends-button`, `news-button`, `now-playing-button`, `lyrics-button`, `queue-button`, `devices-button`, `mini-player-button`, `fullscreen-button`. Everything a plugin hid comes back when the plugin is turned off or stops.
 
 #### Icons
 
@@ -315,7 +333,7 @@ Rustify provides a `Spicetify` global that covers the commonly used extension AP
 
 | Spicetify | Rustify support |
 | --- | --- |
-| `Spicetify.Player` (`data`, `play`, `pause`, `togglePlay`, `next`, `back`, `seek`, `setVolume`, `getVolume`, `isPlaying`, `getProgress`, `getDuration`, `toggleShuffle`, `toggleRepeat`, `addEventListener`) | Supported. `data` has the Spicetify shape (`item.uri`, `item.name`, `item.metadata`, `isPaused`, ...). |
+| `Spicetify.Player` (`data`, `play`, `pause`, `togglePlay`, `next`, `back`, `seek`, `setVolume`, `getVolume`, `isPlaying`, `getProgress`, `getDuration`, `toggleShuffle`, `toggleRepeat`, `getShuffle`, `getRepeat`, `getMute`, `toggleHeart`, `addEventListener`) | Supported. `data` has the Spicetify shape (`item.uri`, `item.name`, `item.metadata`, `isPaused`, ...). |
 | `Spicetify.showNotification` | Supported |
 | `Spicetify.LocalStorage` | Supported, backed by plugin storage |
 | `new Spicetify.ContextMenu.Item(name, onClick, shouldAdd)` | Supported. `onClick` and `shouldAdd` receive `[uri]`. |
@@ -328,10 +346,12 @@ Rustify provides a `Spicetify` global that covers the commonly used extension AP
 | `Spicetify.React`, `ReactDOM`, `document`, CSS injection | Not available |
 | `CosmosAsync.post/put/del`, `Platform` internals | Not available |
 
+[`examples/plugins/spicetify-song-info`](../examples/plugins/spicetify-song-info) is a Spicetify extension that runs unchanged. It uses the usual wait loop, `Topbar.Button`, `ContextMenu.Item`, `LocalStorage`, `CosmosAsync.get` and `URI`, and only adds a `manifest.json`. Rustify's tests run it on every build.
+
 Typical port:
 
-1. Remove the wait loop that polls for `Spicetify.Player` to exist. Everything is ready when your script runs.
-2. Replace React components and DOM code with a `Rustify.UI.Page` and blocks.
+1. Keep or remove the wait loop that polls for `Spicetify.Player`. Everything is ready when your script runs, so it finishes immediately.
+2. Replace React components and DOM code with a `Rustify.UI.Page` or a `Rustify.UI.NowPlaying.Section` and blocks. Replace CSS that hides parts of Spotify with `Rustify.UI.hide`.
 3. Replace CSS themes with a manifest `theme`.
 4. Add a `manifest.json` with the permissions the extension needs.
 
@@ -352,6 +372,7 @@ Plugins can only reach what the `Rustify` API exposes. They have no file system,
 | Buttons | 4 in the top bar, 4 in the player bar |
 | Menu items | 8 |
 | Pages | 4 |
+| Now-playing sections | 3, with up to 100 blocks each |
 
 Each plugin runs in its own engine instance on a background thread, so a slow plugin cannot freeze the interface. A plugin that exceeds its time budget three times is stopped and marked as failed in Settings.
 

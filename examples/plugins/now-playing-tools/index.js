@@ -1,11 +1,17 @@
 const settings = {
   notify: Rustify.Storage.get("notify") !== "false",
+  hideFriends: Rustify.Storage.get("hide-friends") === "true",
 };
 
 let plays = Number(Rustify.Storage.get("plays") || 0);
 let topTracks = [];
 
 const page = Rustify.UI.Page("stats", "Listening stats", "bolt");
+const panel = Rustify.UI.NowPlaying.Section("stats", "Listening stats");
+
+function marked() {
+  return JSON.parse(Rustify.Storage.get("marked") || "[]");
+}
 
 function render() {
   const track = Rustify.Player.data.track;
@@ -17,15 +23,30 @@ function render() {
     { type: "text", text: `Songs started since you installed this plugin: ${plays}` },
     { type: "divider" },
     { type: "toggle", id: "notify", text: "Notify on song change", sub: "Shows a toast with the song title", checked: settings.notify },
+    { type: "toggle", id: "hide-friends", text: "Hide the friend activity button", sub: "Shows how plugins can change Rustify's own interface", checked: settings.hideFriends },
     { type: "button", id: "refresh", text: "Load my top tracks", primary: true },
     ...topTracks.map(t => ({ type: "row", id: "track:" + t.uri, text: t.name, sub: t.artists, image: t.image })),
   ]);
+  panel.render([
+    { type: "text", text: `${plays} songs started`, sub: `${marked().length} marked songs` },
+    { type: "button", id: "open", text: "Open stats" },
+  ]);
+}
+
+function applyHide() {
+  if (settings.hideFriends) Rustify.UI.hide("friends-button");
+  else Rustify.UI.show("friends-button");
 }
 
 page.onAction((id, value) => {
   if (id === "notify") {
     settings.notify = value === true;
     Rustify.Storage.set("notify", String(settings.notify));
+    render();
+  } else if (id === "hide-friends") {
+    settings.hideFriends = value === true;
+    Rustify.Storage.set("hide-friends", String(settings.hideFriends));
+    applyHide();
     render();
   } else if (id === "refresh") {
     Rustify.Spotify.get("/v1/me/top/tracks?limit=5&time_range=short_term")
@@ -44,23 +65,27 @@ page.onAction((id, value) => {
   }
 });
 
+panel.onAction(id => {
+  if (id === "open") page.open();
+});
+
 Rustify.UI.Topbar.Button("Listening stats", "bolt", () => page.open());
 
 const marker = Rustify.UI.Playbar.Button("Mark this song", "star", button => {
   const track = Rustify.Player.data.track;
   if (!track) return;
-  const marked = JSON.parse(Rustify.Storage.get("marked") || "[]");
-  const index = marked.indexOf(track.uri);
-  if (index === -1) marked.push(track.uri);
-  else marked.splice(index, 1);
-  Rustify.Storage.set("marked", JSON.stringify(marked.slice(-500)));
+  const list = marked();
+  const index = list.indexOf(track.uri);
+  if (index === -1) list.push(track.uri);
+  else list.splice(index, 1);
+  Rustify.Storage.set("marked", JSON.stringify(list.slice(-500)));
   button.active = index === -1;
+  render();
 });
 
 function syncMarker() {
   const track = Rustify.Player.data.track;
-  const marked = JSON.parse(Rustify.Storage.get("marked") || "[]");
-  marker.active = !!track && marked.includes(track.uri);
+  marker.active = !!track && marked().includes(track.uri);
 }
 
 Rustify.UI.ContextMenu.Item("Copy song info to log", ["track"], target => {
@@ -77,5 +102,6 @@ Rustify.Player.addEventListener("songchange", data => {
   render();
 });
 
+applyHide();
 render();
 console.log("Now Playing Tools loaded");

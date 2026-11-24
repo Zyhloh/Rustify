@@ -46,7 +46,8 @@ Plugins are plain JavaScript running in a sandboxed engine inside the app. They 
 
 - add buttons to the top bar and the player bar, with their own icons
 - add items to track, album, playlist and artist menus
-- add full pages built from Rustify's own components, so they look like the rest of the app
+- add full pages and now-playing panel sections built from Rustify's own components, so they look like the rest of the app
+- hide built-in buttons they replace
 - react to song changes, play and pause, and progress
 - control playback, read Spotify Web API data and keep their own settings
 
@@ -66,7 +67,7 @@ Every add-on gets a safety check before you turn it on. Rustify looks for hidden
 
 Each plugin runs in its own engine with memory and time limits, permission checks and rate limits. A broken plugin is stopped without affecting the app.
 
-Spicetify extensions can be ported with small changes: `Spicetify.Player`, `ContextMenu.Item`, `Topbar.Button`, `Playbar.Button`, `LocalStorage`, `showNotification` and `CosmosAsync.get` are provided.
+Many Spicetify extensions run with only a `manifest.json` added: `Spicetify.Player`, `ContextMenu.Item`, `Topbar.Button`, `Playbar.Button`, `LocalStorage`, `showNotification`, `CosmosAsync.get` and `URI` are provided. The repository includes one that runs unchanged.
 
 See the [plugin guide](docs/PLUGINS.md) for the full API and the [example plugins and themes](examples/plugins).
 

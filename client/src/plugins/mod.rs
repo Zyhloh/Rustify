@@ -6,7 +6,7 @@ mod review;
 #[cfg(test)]
 mod bench;
 
-use crate::{App, MenuEntry, Player, PluginBlock, PluginControl, PluginInfo, PluginLog, PluginPageLink, Plugins, Store, Theme, config::Config, ctx::Ctx, pages};
+use crate::{App, HiddenUi, MenuEntry, Player, PluginBlock, PluginControl, PluginInfo, PluginLog, PluginPageLink, PluginSection, Plugins, Store, Theme, config::Config, ctx::Ctx, pages};
 use host::{Cmd, UiOp};
 use manifest::Kind;
 use serde::{Deserialize, Serialize};
@@ -66,6 +66,8 @@ struct State {
     menus: Vec<Menu>,
     pages: BTreeMap<(String, String), (String, String, String)>,
     blocks: BTreeMap<(String, String), Vec<PluginBlock>>,
+    sections: BTreeMap<(String, String), (String, String, Vec<PluginBlock>)>,
+    hidden: BTreeMap<String, BTreeSet<String>>,
     themes: BTreeMap<String, BTreeMap<String, String>>,
     defaults: BTreeMap<String, Color>,
     open_page: Option<(String, String)>,
@@ -80,6 +82,7 @@ struct State {
     playbar: Rc<VecModel<PluginControl>>,
     page_links: Rc<VecModel<PluginPageLink>>,
     block_model: Rc<VecModel<PluginBlock>>,
+    section_model: Rc<VecModel<PluginSection>>,
     logs: Rc<VecModel<PluginLog>>,
     shown: Rc<VecModel<PluginInfo>>,
 }
@@ -181,6 +184,7 @@ pub fn install(app: &App, ctx: &Ctx) {
         plugins.set_playbar(ModelRc::from(s.playbar.clone()));
         plugins.set_pages(ModelRc::from(s.page_links.clone()));
         plugins.set_blocks(ModelRc::from(s.block_model.clone()));
+        plugins.set_sections(ModelRc::from(s.section_model.clone()));
         plugins.set_logs(ModelRc::from(s.logs.clone()));
         plugins.set_shown(ModelRc::from(s.shown.clone()));
         plugins.set_dev_mode(s.saved.dev_mode);
@@ -497,6 +501,46 @@ fn clear_plugin(s: &mut State, id: &str) {
     s.pages.retain(|(p, _), _| p != id);
     s.blocks.retain(|(p, _), _| p != id);
     s.themes.remove(id);
+    if s.sections.keys().any(|(p, _)| p == id) {
+        s.sections.retain(|(p, _), _| p != id);
+        rebuild_sections(s);
+    }
+    s.hidden.remove(id);
+}
+
+fn rebuild_sections(s: &State) {
+    let rows: Vec<PluginSection> = s
+        .sections
+        .iter()
+        .map(|((plugin, id), (title, _, blocks))| PluginSection {
+            plugin: plugin.as_str().into(),
+            id: id.as_str().into(),
+            title: title.as_str().into(),
+            blocks: ModelRc::from(Rc::new(VecModel::from(blocks.clone()))),
+        })
+        .collect();
+    s.section_model.set_vec(rows);
+}
+
+fn sync_hidden(app: &App) {
+    let hidden = STATE.with(|s| {
+        let s = s.borrow();
+        let set: BTreeSet<&str> = s.hidden.values().flatten().map(String::as_str).collect();
+        HiddenUi {
+            friends: set.contains("friends-button"),
+            news: set.contains("news-button"),
+            now_playing: set.contains("now-playing-button"),
+            lyrics: set.contains("lyrics-button"),
+            queue: set.contains("queue-button"),
+            devices: set.contains("devices-button"),
+            mini_player: set.contains("mini-player-button"),
+            fullscreen: set.contains("fullscreen-button"),
+        }
+    });
+    let plugins = app.global::<Plugins>();
+    if plugins.get_hidden() != hidden {
+        plugins.set_hidden(hidden);
+    }
 }
 
 fn retain<T: Clone + 'static>(model: &VecModel<T>, keep: impl Fn(&T) -> bool) {
@@ -508,6 +552,7 @@ fn retain<T: Clone + 'static>(model: &VecModel<T>, keep: impl Fn(&T) -> bool) {
 
 fn refresh(app: &App) {
     library::refresh(app);
+    sync_hidden(app);
 }
 
 fn theme_get(theme: &Theme, key: &str) -> Color {
@@ -665,6 +710,7 @@ fn apply(app: &App, op: UiOp) {
                     }
                     "shuffle" => player.invoke_toggle_shuffle(),
                     "repeat" => player.invoke_cycle_repeat(),
+                    "like" => player.invoke_save_pressed(),
                     _ => {}
                 }
             }
@@ -709,6 +755,35 @@ fn apply(app: &App, op: UiOp) {
                     }
                     s.blocks.insert(key, rows);
                 }
+            }
+            UiOp::Section { plugin, id, title, handle, remove } => {
+                let key = (plugin.clone(), id);
+                if remove {
+                    s.sections.remove(&key);
+                } else if s.sections.keys().filter(|(p, _)| *p == plugin).count() >= 3 && !s.sections.contains_key(&key) {
+                    log(&s, &plugin, "warn", "a plugin can add at most 3 now-playing sections");
+                } else {
+                    let blocks = s.sections.get(&key).map(|e| e.2.clone()).unwrap_or_default();
+                    s.sections.insert(key, (title, handle, blocks));
+                }
+                rebuild_sections(&s);
+            }
+            UiOp::SectionRender { plugin, id, nodes } => {
+                let rows: Vec<PluginBlock> = nodes.iter().map(block).collect();
+                if let Some(entry) = s.sections.get_mut(&(plugin, id)) {
+                    images.extend(rows.iter().filter(|b| !b.image_url.is_empty()).map(|b| b.image_url.to_string()));
+                    entry.2 = rows;
+                    rebuild_sections(&s);
+                }
+            }
+            UiOp::Hide { plugin, element, hidden } => {
+                let set = s.hidden.entry(plugin).or_default();
+                if hidden {
+                    set.insert(element);
+                } else {
+                    set.remove(&element);
+                }
+                dirty = true;
             }
             UiOp::Open { plugin, id } => {
                 if s.pages.contains_key(&(plugin.clone(), id.clone())) {
@@ -814,6 +889,14 @@ pub fn page_action(block_id: &str, value: &str) {
     send(Cmd::Action { plugin, key: handle, json: json!({ "id": block_id, "value": value }).to_string() });
 }
 
+pub fn section_action(plugin: &str, section: &str, block_id: &str, value: &str) {
+    let Some(handle) = STATE.with(|s| s.borrow().sections.get(&(plugin.to_owned(), section.to_owned())).map(|e| e.1.clone())) else {
+        return;
+    };
+    let value: Value = serde_json::from_str(value).unwrap_or_else(|_| json!(value));
+    send(Cmd::Action { plugin: plugin.into(), key: handle, json: json!({ "id": block_id, "value": value }).to_string() });
+}
+
 pub fn menu_entries(kind: &str) -> Vec<MenuEntry> {
     STATE.with(|s| {
         s.borrow()
@@ -911,6 +994,16 @@ pub fn apply_image(key: &str, image: &slint::Image) {
             for b in rows.iter_mut().filter(|b| b.image_url == key) {
                 b.art = image.clone();
             }
+        }
+        let mut touched = false;
+        for entry in s.sections.values_mut() {
+            for b in entry.2.iter_mut().filter(|b| b.image_url == key) {
+                b.art = image.clone();
+                touched = true;
+            }
+        }
+        if touched {
+            rebuild_sections(&s);
         }
         let model = s.block_model.clone();
         for i in 0..model.row_count() {

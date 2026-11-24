@@ -20,6 +20,9 @@ const STORAGE_LIMIT: usize = 1024 * 1024;
 const MAX_TIMERS: usize = 100;
 const UI_OPS_PER_SECOND: u32 = 120;
 const SPOTIFY_PER_MINUTE: usize = 30;
+pub const HIDEABLE: [&str; 8] = [
+    "friends-button", "news-button", "now-playing-button", "lyrics-button", "queue-button", "devices-button", "mini-player-button", "fullscreen-button",
+];
 
 pub struct Spec {
     pub manifest: Manifest,
@@ -45,6 +48,9 @@ pub enum UiOp {
     Control { plugin: String, place: String, id: String, label: String, icon: String, active: bool, remove: bool },
     Menu { plugin: String, id: String, label: String, types: Vec<String>, remove: bool },
     Page { plugin: String, id: String, title: String, icon: String, handle: String, remove: bool },
+    Section { plugin: String, id: String, title: String, handle: String, remove: bool },
+    SectionRender { plugin: String, id: String, nodes: Vec<Value> },
+    Hide { plugin: String, element: String, hidden: bool },
     Render { plugin: String, id: String, nodes: Vec<Value> },
     Open { plugin: String, id: String },
     Theme { plugin: String, colors: BTreeMap<String, String> },
@@ -181,7 +187,7 @@ impl Shared {
             "player" => {
                 self.need("player")?;
                 let action = string(payload, "action", 16);
-                if !matches!(action.as_str(), "play" | "pause" | "toggle" | "next" | "prev" | "seek" | "volume" | "shuffle" | "repeat") {
+                if !matches!(action.as_str(), "play" | "pause" | "toggle" | "next" | "prev" | "seek" | "volume" | "shuffle" | "repeat" | "like") {
                     return fail("unknown player action");
                 }
                 let value = arg(payload, "value").as_f64().filter(|v| v.is_finite()).unwrap_or(0.0);
@@ -286,6 +292,36 @@ impl Shared {
                     return fail("a page can show at most 300 items");
                 }
                 self.ui(UiOp::Render { plugin: id, id: string(payload, "id", 40), nodes })?;
+                Ok(String::new())
+            }
+            "ui.section" => {
+                let section = string(payload, "id", 40);
+                if !valid_local_id(&section) {
+                    return fail("section id must be 1-40 characters of a-z, 0-9, - and _");
+                }
+                self.ui(UiOp::Section {
+                    plugin: id,
+                    id: section,
+                    title: string(payload, "title", 60),
+                    handle: string(payload, "handle", 20),
+                    remove: arg(payload, "remove").as_bool().unwrap_or(false),
+                })?;
+                Ok(String::new())
+            }
+            "ui.section.render" => {
+                let nodes = arg(payload, "nodes").as_array().cloned().unwrap_or_default();
+                if nodes.len() > 100 {
+                    return fail("a section can show at most 100 items");
+                }
+                self.ui(UiOp::SectionRender { plugin: id, id: string(payload, "id", 40), nodes })?;
+                Ok(String::new())
+            }
+            "ui.hide" => {
+                let element = string(payload, "element", 40);
+                if !HIDEABLE.contains(&element.as_str()) {
+                    return fail(format!("can't hide \"{element}\". Use one of: {}", HIDEABLE.join(", ")));
+                }
+                self.ui(UiOp::Hide { plugin: id, element, hidden: arg(payload, "hidden").as_bool().unwrap_or(true) })?;
                 Ok(String::new())
             }
             "ui.open" => {
@@ -781,7 +817,77 @@ mod tests {
             let state = r#"{"track":{"id":"a","uri":"spotify:track:0s3nnoMeVWz3989MkNQiRf","name":"Song","album":"Album","duration":1000,"image":"","artists":[{"id":"b","name":"Artist"}]},"isPlaying":true,"position":0,"duration":1000,"volume":0.5,"shuffle":false,"repeat":"off","context":null}"#;
             p.call("__emit", "state".into(), Some(state.into())).unwrap();
             p.call("__emit", "songchange".into(), Some(state.into())).unwrap();
-            assert!(logs(&ops).iter().any(|l| l.contains("loaded") || l.contains("applied")), "{id}");
+            assert!(logs(&ops).iter().any(|l| l.contains("loaded") || l.contains("ready")), "{id}");
         }
+    }
+
+    #[test]
+    fn spicetify_extension_runs_unchanged() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/plugins/spicetify-song-info");
+        let (manifest, script) = manifest::load(&dir).unwrap();
+        let ops = Arc::new(Mutex::new(Vec::new()));
+        let seen = ops.clone();
+        let sink: Sink = Arc::new(move |op| seen.lock().unwrap().push(op));
+        let requested = Arc::new(Mutex::new(Vec::new()));
+        let paths = requested.clone();
+        let fetch: Fetch = Arc::new(move |path, done| {
+            paths.lock().unwrap().push(path);
+            done(Ok(r#"{"name":"Song","album":{"release_date":"2024-05-01"}}"#.into()))
+        });
+        let (tx, rx) = mpsc::channel();
+        let storage_dir = std::env::temp_dir().join(format!("rustify-port-test-{}", std::process::id()));
+        let mut p = Instance::start(Spec { manifest, script, storage_dir, state: None }, sink, fetch, tx).unwrap();
+
+        assert!(logs(&ops).iter().any(|l| l == "Song info ready, shuffle is off"));
+        let (button, menu) = {
+            let ops = ops.lock().unwrap();
+            let button = ops.iter().find_map(|o| match o {
+                UiOp::Control { place, id, label, active, .. } if place == "topbar" && label == "Song info" && *active => Some(id.clone()),
+                _ => None,
+            });
+            let menu = ops.iter().find_map(|o| match o {
+                UiOp::Menu { id, label, remove: false, .. } if label == "Show release date" => Some(id.clone()),
+                _ => None,
+            });
+            (button.expect("topbar button"), menu.expect("context menu item"))
+        };
+
+        let state = r#"{"track":{"id":"a","uri":"spotify:track:0s3nnoMeVWz3989MkNQiRf","name":"Song","album":"Album","duration":1000,"image":"","artists":[{"id":"b","name":"Artist"}]},"isPlaying":true,"position":0,"duration":1000,"volume":0.5,"shuffle":false,"repeat":"off","context":null}"#;
+        p.call("__emit", "state".into(), Some(state.into())).unwrap();
+        p.call("__emit", "songchange".into(), Some(state.into())).unwrap();
+        let notes = |ops: &Arc<Mutex<Vec<UiOp>>>| ops.lock().unwrap().iter().filter_map(|o| if let UiOp::Notify(t) = o { Some(t.clone()) } else { None }).collect::<Vec<_>>();
+        assert_eq!(notes(&ops), vec!["Song by Artist"]);
+
+        p.shared.borrow_mut().last_notify = None;
+        p.call("__action", menu, Some(r#"{"uri":"spotify:track:0s3nnoMeVWz3989MkNQiRf","type":"track","title":"Song"}"#.into())).unwrap();
+        assert_eq!(requested.lock().unwrap().as_slice(), ["/v1/tracks/0s3nnoMeVWz3989MkNQiRf"]);
+        let Ok(Cmd::Resolve { id, ok, json, .. }) = rx.try_recv() else { panic!("no response queued") };
+        p.call_resolve(id, ok, json).unwrap();
+        assert_eq!(notes(&ops).last().unwrap(), "Song came out on 2024-05-01");
+
+        p.shared.borrow_mut().last_notify = None;
+        p.call("__action", button, None).unwrap();
+        assert_eq!(notes(&ops).last().unwrap(), "Song info turned off");
+        assert_eq!(p.shared.borrow().storage.get("song-info:enabled").map(String::as_str), Some("false"));
+    }
+
+    #[test]
+    fn ui_hooks_are_validated() {
+        let (p, ops) = plugin(
+            "hooks",
+            &["player"],
+            "const s = Rustify.UI.NowPlaying.Section('stats', 'Stats'); s.render([{ type: 'text', text: 'hi' }, { type: 'script', text: 'x' }]);
+             Rustify.UI.hide('friends-button'); Rustify.Player.toggleLike();
+             let bad = 0; try { Rustify.UI.hide('settings-page'); } catch (e) { bad++; }
+             try { Rustify.UI.NowPlaying.Section('../x', 'X'); } catch (e) { bad++; }
+             console.log('rejected ' + bad);",
+        );
+        assert!(p.is_ok());
+        let ops = ops.lock().unwrap();
+        assert!(ops.iter().any(|o| matches!(o, UiOp::Section { id, title, remove: false, .. } if id == "stats" && title == "Stats")));
+        assert!(ops.iter().any(|o| matches!(o, UiOp::SectionRender { nodes, .. } if nodes.len() == 1)));
+        assert!(ops.iter().any(|o| matches!(o, UiOp::Hide { element, hidden: true, .. } if element == "friends-button")));
+        assert!(ops.iter().any(|o| matches!(o, UiOp::Player { action, .. } if action == "like")));
+        assert!(ops.iter().any(|o| matches!(o, UiOp::Log { text, .. } if text == "rejected 2")));
     }
 }

@@ -157,6 +157,45 @@
 
   const NODE_TYPES = ["heading", "text", "button", "toggle", "slider", "input", "row", "divider", "image"];
 
+  const normalize = (nodes, max) =>
+    (Array.isArray(nodes) ? nodes : [])
+      .filter(n => n && NODE_TYPES.includes(n.type))
+      .slice(0, max)
+      .map(n => ({
+        type: n.type,
+        id: text(n.id, 64),
+        text: text(n.text ?? n.label ?? n.title, 2000),
+        sub: text(n.sub ?? n.subtitle ?? n.placeholder, 500),
+        value: typeof n.value === "number" ? n.value : 0,
+        input: typeof n.value === "string" ? text(n.value, 500) : "",
+        min: typeof n.min === "number" ? n.min : 0,
+        max: typeof n.max === "number" ? n.max : 1,
+        on: !!(n.checked ?? n.on),
+        primary: !!n.primary,
+        image: text(n.image ?? n.url, 500),
+      }));
+
+  const section = (id, title) => {
+    const sectionId = text(id, 40);
+    let actionHandler = null;
+    const key = handle(event => actionHandler && actionHandler(event.id, event.value));
+    call("ui.section", { id: sectionId, title: text(title, 60), handle: key });
+    return {
+      render(nodes) {
+        call("ui.section.render", { id: sectionId, nodes: normalize(nodes, 100) });
+      },
+      onAction(fn) {
+        actionHandler = typeof fn === "function" ? fn : null;
+      },
+      remove() {
+        handlers.delete(key);
+        call("ui.section", { id: sectionId, remove: true });
+      },
+    };
+  };
+
+  const ELEMENTS = ["friends-button", "news-button", "now-playing-button", "lyrics-button", "queue-button", "devices-button", "mini-player-button", "fullscreen-button"];
+
   const page = (id, title, iconName) => {
     const pageId = text(id, 40);
     let actionHandler = null;
@@ -164,23 +203,7 @@
     call("ui.page", { id: pageId, title: text(title, 60), icon: icon(iconName), handle: key });
     return {
       render(nodes) {
-        const list = (Array.isArray(nodes) ? nodes : [])
-          .filter(n => n && NODE_TYPES.includes(n.type))
-          .slice(0, 300)
-          .map(n => ({
-            type: n.type,
-            id: text(n.id, 64),
-            text: text(n.text ?? n.label ?? n.title, 2000),
-            sub: text(n.sub ?? n.subtitle ?? n.placeholder, 500),
-            value: typeof n.value === "number" ? n.value : 0,
-            input: typeof n.value === "string" ? text(n.value, 500) : "",
-            min: typeof n.min === "number" ? n.min : 0,
-            max: typeof n.max === "number" ? n.max : 1,
-            on: !!(n.checked ?? n.on),
-            primary: !!n.primary,
-            image: text(n.image ?? n.url, 500),
-          }));
-        call("ui.render", { id: pageId, nodes: list });
+        call("ui.render", { id: pageId, nodes: normalize(nodes, 300) });
       },
       onAction(fn) {
         actionHandler = typeof fn === "function" ? fn : null;
@@ -208,6 +231,7 @@
     setVolume: level => call("player", { action: "volume", value: Math.max(0, Math.min(1, Number(level) || 0)) }),
     toggleShuffle: () => call("player", { action: "shuffle" }),
     toggleRepeat: () => call("player", { action: "repeat" }),
+    toggleLike: () => call("player", { action: "like" }),
     getVolume: () => state.volume,
     isPlaying: () => state.isPlaying,
     getProgress: () => state.position,
@@ -235,6 +259,10 @@
       Playbar: Object.freeze({ Button: controls("playbar", "ui.playbar") }),
       ContextMenu: Object.freeze({ Item: menuItem }),
       Page: page,
+      NowPlaying: Object.freeze({ Section: section }),
+      hide: element => call("ui.hide", { element: text(element, 40), hidden: true }),
+      show: element => call("ui.hide", { element: text(element, 40), hidden: false }),
+      elements: Object.freeze([...ELEMENTS]),
       icons: Object.freeze(Object.keys(ICONS)),
     }),
     Theme: Object.freeze({
@@ -332,6 +360,10 @@
         return asSpicetifyData();
       },
       addEventListener: (type, cb) => on(eventMap[type] || type, () => cb({ data: asSpicetifyData(), type })),
+      getRepeat: () => ({ off: 0, context: 1, track: 2 })[state.repeat] ?? 0,
+      getShuffle: () => !!state.shuffle,
+      getMute: () => state.volume === 0,
+      toggleHeart: () => Player.toggleLike(),
     },
     showNotification: message => Rustify.showNotification(message),
     LocalStorage: { get: Storage.get, set: Storage.set, remove: Storage.remove, clear: Storage.clear },

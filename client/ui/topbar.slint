@@ -224,14 +224,14 @@ export component TopBar inherits Rectangle {
             active-color: Theme.text;
             clicked => { Plugins.open-manager(); }
         }
-        if root.width >= 960px: IconButton {
+        if root.width >= 960px && !Plugins.hidden.news: IconButton {
             y: 16px;
             icon: Icons.bell;
             ghost: true;
             active: Store.page == "news";
             clicked => { Store.open-news(); }
         }
-        if root.width >= 960px && Prefs.show-friends: IconButton {
+        if root.width >= 960px && Prefs.show-friends && !Plugins.hidden.friends: IconButton {
             y: 16px;
             icon: Icons.friends;
             ghost: true;

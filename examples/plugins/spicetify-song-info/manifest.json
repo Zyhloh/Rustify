@@ -1,0 +1,9 @@
+{
+  "id": "spicetify-song-info",
+  "name": "Song Info",
+  "version": "1.0.0",
+  "author": { "name": "Rustify", "url": "https://github.com/Zyhloh" },
+  "description": "A Spicetify extension running unchanged: a top bar toggle, song change toasts and a release date menu item.",
+  "repository": "https://github.com/Zyhloh/Rustify/tree/main/examples/plugins/spicetify-song-info",
+  "permissions": ["spotify"]
+}
