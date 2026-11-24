@@ -92,6 +92,7 @@ struct State {
     block_model: Rc<VecModel<PluginBlock>>,
     section_model: Rc<VecModel<PluginSection>>,
     home_model: Rc<VecModel<PluginSection>>,
+    dialog_model: Rc<VecModel<PluginSection>>,
     row_buttons: Rc<VecModel<PluginControl>>,
     logs: Rc<VecModel<PluginLog>>,
     shown: Rc<VecModel<PluginInfo>>,
@@ -197,6 +198,7 @@ pub fn install(app: &App, ctx: &Ctx) {
         plugins.set_blocks(ModelRc::from(s.block_model.clone()));
         plugins.set_sections(ModelRc::from(s.section_model.clone()));
         plugins.set_home_sections(ModelRc::from(s.home_model.clone()));
+        plugins.set_dialogs(ModelRc::from(s.dialog_model.clone()));
         plugins.set_row_buttons(ModelRc::from(s.row_buttons.clone()));
         plugins.set_logs(ModelRc::from(s.logs.clone()));
         plugins.set_shown(ModelRc::from(s.shown.clone()));
@@ -537,6 +539,7 @@ fn rebuild_sections(s: &State) {
     };
     s.section_model.set_vec(rows("now-playing"));
     s.home_model.set_vec(rows("home"));
+    s.dialog_model.set_vec(rows("dialog"));
 }
 
 fn sync_hidden(app: &App) {
@@ -806,6 +809,10 @@ fn apply(app: &App, op: UiOp) {
                     rebuild_sections(&s);
                 }
             }
+            UiOp::Clipboard { plugin, text } => {
+                log(&s, &plugin, "info", "copied text to the clipboard");
+                crate::menu::copy(app, &text, "Copied to clipboard");
+            }
             UiOp::Hide { plugin, element, hidden } => {
                 let set = s.hidden.entry(plugin).or_default();
                 if hidden {
@@ -925,6 +932,15 @@ pub fn section_action(plugin: &str, section: &str, block_id: &str, value: &str) 
     };
     let value: Value = serde_json::from_str(value).unwrap_or_else(|_| json!(value));
     send(Cmd::Action { plugin: plugin.into(), key: handle, json: json!({ "id": block_id, "value": value }).to_string() });
+}
+
+pub fn close_dialog(plugin: &str, id: &str) {
+    STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        if s.sections.remove(&(plugin.to_owned(), id.to_owned())).is_some() {
+            rebuild_sections(&s);
+        }
+    });
 }
 
 pub fn row_click(plugin: &str, id: &str, uri: &str, title: &str) {

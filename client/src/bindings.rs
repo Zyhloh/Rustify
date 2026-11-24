@@ -472,6 +472,7 @@ fn bind_items(app: &App, ctx: &Ctx) {
     });
     plugins.on_click(|plugin, id| crate::plugins::click(&plugin, &id));
     plugins.on_action(|id, value| crate::plugins::page_action(&id, &value));
+    plugins.on_close_dialog(|plugin, id| crate::plugins::close_dialog(&plugin, &id));
     plugins.on_row_click(|plugin, id, uri, title| crate::plugins::row_click(&plugin, &id, &uri, &title));
     plugins.on_section_action(|plugin, section, id, value| crate::plugins::section_action(&plugin, &section, &id, &value));
     let weak = app.as_weak();

@@ -1,7 +1,7 @@
 import { Theme } from "theme.slint";
 import { Icon, Icons } from "icons.slint";
 import { PillButton, Scroller, Slider } from "components.slint";
-import { Plugins, PluginBlock } from "store.slint";
+import { Plugins, PluginBlock, PluginSection } from "store.slint";
 
 export component Toggle inherits Rectangle {
     in property <bool> on;
@@ -209,6 +209,77 @@ export component PluginPage inherits Rectangle {
             }
 
             for block in Plugins.blocks: Block { data: block; }
+        }
+    }
+}
+
+export component PluginDialog inherits Rectangle {
+    in property <PluginSection> data;
+
+    background: #000000b3;
+
+    TouchArea {
+        clicked => { Plugins.close-dialog(root.data.plugin, root.data.id); }
+    }
+
+    property <length> box-width: min(520px, root.width - 48px);
+
+    Rectangle {
+        width: root.box-width;
+        height: min(body.preferred-height, root.height - 96px);
+        border-radius: Theme.radius;
+        background: Theme.surface-high;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #000000b3;
+        clip: true;
+
+        TouchArea { }
+
+        Scroller {
+            content-height: body.preferred-height;
+
+            body := VerticalLayout {
+                width: root.box-width;
+                padding: 28px;
+                spacing: 14px;
+
+                HorizontalLayout {
+                    spacing: 12px;
+
+                    Text {
+                        horizontal-stretch: 1;
+                        text: root.data.title;
+                        color: Theme.text;
+                        font-size: 22px;
+                        font-weight: 800;
+                        wrap: word-wrap;
+                    }
+
+                    Rectangle {
+                        width: 32px;
+                        height: 32px;
+                        border-radius: 16px;
+                        background: close-ta.has-hover ? Theme.tile : transparent;
+
+                        Icon {
+                            d: Icons.close;
+                            size: 16px;
+                            color: Theme.text;
+                        }
+
+                        close-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Plugins.close-dialog(root.data.plugin, root.data.id); }
+                        }
+                    }
+                }
+
+                for b in root.data.blocks: Block {
+                    data: b;
+                    plugin: root.data.plugin;
+                    section: root.data.id;
+                }
+            }
         }
     }
 }

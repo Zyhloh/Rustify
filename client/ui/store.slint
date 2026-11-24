@@ -632,6 +632,7 @@ export global Plugins {
     in property <[PluginBlock]> blocks;
     in property <[PluginSection]> sections;
     in property <[PluginSection]> home-sections;
+    in property <[PluginSection]> dialogs;
     in property <[PluginControl]> row-buttons;
     in property <HiddenUi> hidden;
     in property <[PluginLog]> logs;
@@ -644,6 +645,7 @@ export global Plugins {
     callback action(string, string);
     callback section-action(string, string, string, string);
     callback row-click(string, string, string, string);
+    callback close-dialog(string, string);
     callback open-page(string, string);
     callback open-manager();
     callback open-folder();

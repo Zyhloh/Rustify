@@ -17,7 +17,7 @@ import { LyricsPage } from "lyrics.slint";
 import { ShowPage } from "show.slint";
 import { FullscreenView, MiniView } from "views.slint";
 import { NewsPage } from "news.slint";
-import { PluginPage } from "plugins.slint";
+import { PluginPage, PluginDialog } from "plugins.slint";
 import { ExtensionsPage, ExtensionPage, DropOverlay } from "extensions.slint";
 import { AccountMenu, ProfilePage, HistoryPage, SettingsPage, ElsewhereBar, SetupOverlay } from "account.slint";
 import { ContextMenu, ToastBar, CreditsDialog } from "menu.slint";
@@ -402,6 +402,8 @@ export component App inherits Window {
     if ItemMenu.open: ItemMenuView { }
 
     if PlaylistEdit.open: EditDialog { }
+
+    if Plugins.dialogs.length > 0 && !Shell.mini: PluginDialog { data: Plugins.dialogs[0]; }
 
     if Confirm.open: ConfirmDialog { }
 

@@ -175,6 +175,8 @@
         image: text(n.image ?? n.url, 500),
       }));
 
+
+
   const section = place => (id, title) => {
     const sectionId = text(id, 40);
     let actionHandler = null;
@@ -193,6 +195,138 @@
       },
     };
   };
+
+  const reactShim = (() => {
+    const Fragment = Symbol("Fragment");
+    const createElement = (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity) });
+    let hooks = null;
+    let hookIndex = 0;
+    let rerender = null;
+    const useState = initial => {
+      const slots = hooks;
+      const i = hookIndex++;
+      if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial;
+      const set = value => {
+        slots[i] = typeof value === "function" ? value(slots[i]) : value;
+        if (rerender) rerender();
+      };
+      return [slots[i], set];
+    };
+    const useEffect = () => {};
+    const useRef = initial => {
+      const [ref] = useState(() => ({ current: initial }));
+      return ref;
+    };
+    const useMemo = fn => fn();
+    const useCallback = fn => fn;
+
+    const textOf = node => {
+      if (node === null || node === undefined || node === false || node === true) return "";
+      if (typeof node === "string" || typeof node === "number") return String(node);
+      if (Array.isArray(node)) return node.map(textOf).join("");
+      if (typeof node.type === "function") return textOf(node.type({ ...node.props, children: node.children }));
+      return (node.children || []).map(textOf).join("");
+    };
+
+    const toBlocks = (root, actions) => {
+      const blocks = [];
+      const walk = node => {
+        if (node === null || node === undefined || typeof node === "boolean") return;
+        if (typeof node === "string" || typeof node === "number") {
+          if (String(node).trim()) blocks.push({ type: "text", text: String(node) });
+          return;
+        }
+        if (Array.isArray(node)) return node.forEach(walk);
+        if (typeof node.type === "function") return walk(node.type({ ...node.props, children: node.children }));
+        const tag = node.type;
+        const props = node.props || {};
+        if (tag === "button") {
+          const id = "b" + actions.length;
+          actions.push(props.onClick);
+          const bg = String((props.style || {}).background || "");
+          blocks.push({ type: "button", id, text: textOf(node.children), primary: bg !== "" && bg !== "transparent" && bg !== "none" });
+          return;
+        }
+        if (tag === "input" && props.type === "checkbox") {
+          const id = "b" + actions.length;
+          actions.push(() => props.onChange && props.onChange({ target: { checked: !props.checked } }));
+          blocks.push({ type: "toggle", id, text: props["aria-label"] || "", checked: !!props.checked });
+          return;
+        }
+        if (tag === "img") {
+          blocks.push({ type: "image", image: props.src || "" });
+          return;
+        }
+        if (/^h[1-3]$/.test(tag)) {
+          blocks.push({ type: "heading", text: textOf(node.children) });
+          return;
+        }
+        if (tag === "hr") {
+          blocks.push({ type: "divider" });
+          return;
+        }
+        if (tag === "p" || tag === "span" || tag === "code" || tag === "pre" || tag === "label" || tag === "li" || tag === "h4" || tag === "h5" || tag === "h6") {
+          const kids = node.children || [];
+          if (kids.some(k => k && typeof k === "object" && (k.type === "button" || typeof k.type === "function"))) return kids.forEach(walk);
+          const text = textOf(kids);
+          if (text.trim()) blocks.push({ type: "text", text });
+          return;
+        }
+        (node.children || []).forEach(walk);
+      };
+      walk(root);
+      return blocks;
+    };
+
+    return { Fragment, createElement, useState, useEffect, useRef, useMemo, useCallback, toBlocks, textOf, setRender(fn) { rerender = fn; }, begin(slots) { hooks = slots; hookIndex = 0; } };
+  })();
+
+  let dialogCount = 0;
+  const dialog = (title, content) => {
+    const id = "popup" + ++dialogCount;
+    const card = section("dialog")(id, title);
+    const slots = [];
+    let actions = [];
+    let open = true;
+    const render = () => {
+      if (!open) return;
+      actions = [];
+      let blocks;
+      if (Array.isArray(content)) blocks = content;
+      else if (typeof content === "string") blocks = [{ type: "text", text: content }];
+      else {
+        reactShim.begin(slots);
+        reactShim.setRender(render);
+        blocks = reactShim.toBlocks(content, actions);
+        reactShim.setRender(null);
+      }
+      card.render(blocks);
+    };
+    card.onAction(actionId => {
+      const fn = actions[Number(String(actionId).slice(1))];
+      if (typeof fn === "function") {
+        reactShim.setRender(render);
+        try {
+          fn({ preventDefault() {}, stopPropagation() {}, target: {} });
+        } finally {
+          reactShim.setRender(null);
+        }
+      }
+      render();
+    });
+    render();
+    return {
+      update(next) {
+        content = next;
+        render();
+      },
+      close() {
+        open = false;
+        card.remove();
+      },
+    };
+  };
+  let openDialog = null;
 
   const ELEMENTS = ["friends-button", "news-button", "now-playing-button", "lyrics-button", "queue-button", "devices-button", "mini-player-button", "fullscreen-button"];
 
@@ -261,6 +395,17 @@
       Page: page,
       NowPlaying: Object.freeze({ Section: section("now-playing") }),
       Home: Object.freeze({ Section: section("home") }),
+      Dialog: Object.freeze({
+        show: (title, content) => {
+          if (openDialog) openDialog.close();
+          openDialog = dialog(text(title, 60), content);
+          return openDialog;
+        },
+        hide: () => {
+          if (openDialog) openDialog.close();
+          openDialog = null;
+        },
+      }),
       TrackRow: Object.freeze({ Button: controls("trackrow", "ui.trackrow") }),
       hide: element => call("ui.hide", { element: text(element, 40), hidden: true }),
       show: element => call("ui.hide", { element: text(element, 40), hidden: false }),
@@ -275,6 +420,7 @@
     off,
     navigate: uri => call("navigate", { uri: text(uri, 200) }),
     showNotification: message => call("notify", { text: text(message, 200) }),
+    Clipboard: Object.freeze({ copy: value => call("clipboard", { text: text(value, 5000) }) }),
   });
 
   const asSpicetifyData = () => {
@@ -385,8 +531,25 @@
       isArtist: uri => String(uri).startsWith("spotify:artist:"),
       isPlaylistV1OrV2: uri => String(uri).includes(":playlist:"),
     },
-    Platform: { History: { push: path => Rustify.navigate(String(path && path.pathname ? path.pathname : path)) } },
     SVGIcons: Object.fromEntries(Object.entries(ICONS)),
+    React: Object.freeze({
+      createElement: reactShim.createElement,
+      Fragment: reactShim.Fragment,
+      useState: reactShim.useState,
+      useEffect: reactShim.useEffect,
+      useRef: reactShim.useRef,
+      useMemo: reactShim.useMemo,
+      useCallback: reactShim.useCallback,
+    }),
+    PopupModal: Object.freeze({
+      display: ({ title, content } = {}) => Rustify.UI.Dialog.show(title, content),
+      hide: () => Rustify.UI.Dialog.hide(),
+    }),
+    Platform: {
+      History: { push: path => Rustify.navigate(String(path && path.pathname ? path.pathname : path)) },
+      ClipboardAPI: { copy: value => Promise.resolve(Rustify.Clipboard.copy(value)) },
+    },
+    Config: Object.freeze({ custom_apps: Object.freeze([]), extensions: Object.freeze([]), current_theme: "" }),
   };
 
   globalThis.__emit = (type, json) => {
@@ -423,6 +586,20 @@
     const fn = handlers.get(key);
     if (fn) fn(json ? JSON.parse(json) : null);
   };
+
+  const localStore = Object.freeze({
+    getItem: key => Storage.get(key),
+    setItem: (key, value) => Storage.set(key, String(value)),
+    removeItem: key => Storage.remove(key),
+    clear: () => Storage.clear(),
+    key: i => Storage.keys()[i] ?? null,
+    get length() {
+      return Storage.keys().length;
+    },
+  });
+  globalThis.localStorage = localStore;
+  globalThis.navigator = Object.freeze({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Rustify", platform: "Win32", language: "en-US" });
+  globalThis.window = globalThis;
 
   Object.defineProperty(globalThis, "Rustify", { value: Rustify, writable: false, configurable: false });
   Object.defineProperty(globalThis, "Spicetify", { value: Object.freeze(Spicetify), writable: false, configurable: false });

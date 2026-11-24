@@ -51,6 +51,7 @@ pub enum UiOp {
     Section { plugin: String, place: String, id: String, title: String, handle: String, remove: bool },
     SectionRender { plugin: String, id: String, nodes: Vec<Value> },
     Hide { plugin: String, element: String, hidden: bool },
+    Clipboard { plugin: String, text: String },
     Render { plugin: String, id: String, nodes: Vec<Value> },
     Open { plugin: String, id: String },
     Theme { plugin: String, colors: BTreeMap<String, String> },
@@ -73,6 +74,7 @@ struct Shared {
     next_request: u32,
     spotify_calls: VecDeque<Instant>,
     last_notify: Option<Instant>,
+    last_clipboard: Option<Instant>,
     ui_window: (Instant, u32),
     sink: Sink,
     fetch: Fetch,
@@ -304,8 +306,8 @@ impl Shared {
                     return fail("section id must be 1-40 characters of a-z, 0-9, - and _");
                 }
                 let place = string(payload, "place", 20);
-                if !matches!(place.as_str(), "now-playing" | "home") {
-                    return fail("sections can go in \"now-playing\" or \"home\"");
+                if !matches!(place.as_str(), "now-playing" | "home" | "dialog") {
+                    return fail("sections can go in \"now-playing\", \"home\" or \"dialog\"");
                 }
                 self.ui(UiOp::Section {
                     plugin: id,
@@ -331,6 +333,15 @@ impl Shared {
                     return fail(format!("can't hide \"{element}\". Use one of: {}", HIDEABLE.join(", ")));
                 }
                 self.ui(UiOp::Hide { plugin: id, element, hidden: arg(payload, "hidden").as_bool().unwrap_or(true) })?;
+                Ok(String::new())
+            }
+            "clipboard" => {
+                let now = Instant::now();
+                if self.last_clipboard.is_some_and(|t| now.duration_since(t) < Duration::from_secs(1)) {
+                    return fail("copy at most once a second");
+                }
+                self.last_clipboard = Some(now);
+                self.ui(UiOp::Clipboard { plugin: id, text: string(payload, "text", 5000) })?;
                 Ok(String::new())
             }
             "ui.open" => {
@@ -445,6 +456,7 @@ impl Instance {
             next_request: 0,
             spotify_calls: VecDeque::new(),
             last_notify: None,
+            last_clipboard: None,
             ui_window: (Instant::now(), 0),
             sink,
             fetch,
@@ -970,5 +982,56 @@ mod tests {
         assert!(ops.iter().any(|o| matches!(o, UiOp::Log { text, .. } if text == "bad 2")));
         let rows = ops.iter().filter(|o| matches!(o, UiOp::Control { place, .. } if place == "trackrow")).count();
         assert!(rows <= UI_OPS_PER_SECOND as usize);
+    }
+
+    #[test]
+    fn spicetify_popup_react_and_clipboard() {
+        let script = r##"
+            (function ready() {
+                if (!window.Spicetify?.PopupModal || !Spicetify.React || !Spicetify.Platform?.ClipboardAPI) {
+                    setTimeout(ready, 300);
+                    return;
+                }
+                if ((Spicetify.Config?.custom_apps || []).includes("x")) return;
+                const h = Spicetify.React.createElement;
+                const windows = /windows/i.test(navigator.userAgent);
+                function Body() {
+                    const [copied, setCopied] = Spicetify.React.useState(false);
+                    return h("div", { style: { display: "flex" } },
+                        h("p", null, "Hello ", h("a", { href: "https://example.com" }, "there"), windows ? " on Windows" : ""),
+                        h("div", null, h("code", null, "some command"),
+                            h("button", { style: { background: "#fff" }, onClick: () => { Spicetify.Platform.ClipboardAPI.copy("some command"); setCopied(true); } }, copied ? "Copied" : "Copy")),
+                        h("button", { style: { background: "transparent" }, onClick: () => { localStorage.setItem("snooze", "1"); Spicetify.PopupModal.hide(); } }, "Later"));
+                }
+                Spicetify.PopupModal.display({ title: "Moved", content: h(Body) });
+            })();
+        "##;
+        let (p, ops) = plugin("popup", &[], script);
+        let mut p = p.unwrap();
+        let renders = |ops: &Arc<Mutex<Vec<UiOp>>>| -> Vec<Vec<Value>> {
+            ops.lock().unwrap().iter().filter_map(|o| if let UiOp::SectionRender { nodes, .. } = o { Some(nodes.clone()) } else { None }).collect()
+        };
+        let (key, handle) = {
+            let ops = ops.lock().unwrap();
+            ops.iter()
+                .find_map(|o| match o {
+                    UiOp::Section { place, id, title, handle, remove: false, .. } if place == "dialog" && title == "Moved" => Some((id.clone(), handle.clone())),
+                    _ => None,
+                })
+                .expect("dialog")
+        };
+        let first = renders(&ops).last().cloned().unwrap();
+        let texts: Vec<&str> = first.iter().filter_map(|n| n["text"].as_str()).collect();
+        assert_eq!(texts, ["Hello there on Windows", "some command", "Copy", "Later"]);
+        assert_eq!(first[2]["primary"], true);
+        assert_eq!(first[3]["primary"], false);
+
+        p.call("__action", handle.clone(), Some(r#"{"id":"b0","value":""}"#.into())).unwrap();
+        assert!(ops.lock().unwrap().iter().any(|o| matches!(o, UiOp::Clipboard { text, .. } if text == "some command")));
+        assert_eq!(renders(&ops).last().unwrap()[2]["text"], "Copied");
+
+        p.call("__action", handle, Some(r#"{"id":"b1","value":""}"#.into())).unwrap();
+        assert_eq!(p.shared.borrow().storage.get("snooze").map(String::as_str), Some("1"));
+        assert!(ops.lock().unwrap().iter().any(|o| matches!(o, UiOp::Section { id, remove: true, .. } if *id == key)));
     }
 }
