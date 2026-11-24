@@ -15,7 +15,7 @@ Rustify takes a different approach:
 - **Playback uses Spotify's official Web Playback SDK**, the same player behind open.spotify.com. Spotify supports it for every Premium account, so playback works for everyone.
 - **librespot is used only for metadata**, such as your library, Liked Songs, lyrics and artist details. It never handles audio, so the audio key problem doesn't apply.
 - **Rustify keeps working when the Web API is rate limited.** Library, Liked Songs, playlists and profile data fall back to Spotify's internal endpoints.
-- **It's a native app.** The interface is a Rust and Slint application rather than a browser wrapper. It idles at near-zero CPU and starts in about a second.
+- **It's a native app.** The interface is a Rust and Slint application rather than a browser wrapper. It uses near-zero CPU when idle.
 
 | | Rustify | librespot-based clients |
 | --- | --- | --- |
