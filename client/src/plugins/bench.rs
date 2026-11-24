@@ -195,3 +195,39 @@ fn now_playing_sections_under_load() {
     );
     tx.send(Cmd::Shutdown).unwrap();
 }
+
+#[test]
+#[ignore]
+fn track_row_clicks_and_home_sections() {
+    let (tx, rx) = harness();
+    let script = "const home = Rustify.UI.Home.Section('h', 'H'); let marks = 0;
+        Rustify.UI.TrackRow.Button('Mark', 'star', (b, t) => { marks++; home.render([{ type: 'text', text: t.title + ' ' + marks }]); });";
+    let manifest = Manifest { id: "rows".into(), name: "rows".into(), main: "index.js".into(), ..Manifest::default() };
+    let storage_dir = std::env::temp_dir().join(format!("rustify-bench-{}", std::process::id()));
+    tx.send(Cmd::Load(Box::new(Spec { manifest, script: script.into(), storage_dir, state: None }))).unwrap();
+    let mut button = None;
+    loop {
+        match rx.recv_timeout(Duration::from_secs(5)).unwrap().1 {
+            UiOp::Control { id, place, .. } if place == "trackrow" => button = Some(id),
+            UiOp::Started(p) if p == "rows" => break,
+            _ => {}
+        }
+    }
+    let button = button.expect("track row button");
+    drain(&rx);
+    let mut samples = Vec::new();
+    for _ in 0..200 {
+        std::thread::sleep(Duration::from_millis(20));
+        let sent = Instant::now();
+        tx.send(Cmd::Action { plugin: "rows".into(), key: button.clone(), json: r#"{"uri":"spotify:track:0s3nnoMeVWz3989MkNQiRf","type":"track","title":"Song"}"#.into() }).unwrap();
+        loop {
+            let (at, op) = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            if matches!(op, UiOp::SectionRender { .. }) {
+                samples.push(at - sent);
+                break;
+            }
+        }
+    }
+    report("track row click -> plugin -> Home card update", samples);
+    tx.send(Cmd::Shutdown).unwrap();
+}

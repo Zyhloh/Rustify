@@ -943,4 +943,32 @@ mod tests {
         let (p, _) = plugin("bad-place", &[], "Rustify.UI.NowPlaying.Section('ok', 'x'); globalThis.__x = 1;");
         assert!(p.is_ok());
     }
+
+    #[test]
+    fn row_and_home_hooks_are_hardened() {
+        let (p, ops) = plugin(
+            "row-spam",
+            &[],
+            "let bad = 0;
+             try { Rustify.UI.TrackRow.Button('x', '<svg onload=alert(1)>', () => {}); } catch (e) { bad++; }
+             try { Rustify.UI.Home.Section('../evil', 'X'); } catch (e) { bad++; }
+             const h = Rustify.UI.Home.Section('h', 'H');
+             try { h.render(Array.from({ length: 500 }, () => ({ type: 'text', text: 'x' }))); } catch (e) { bad++; }
+             console.log('bad ' + bad);
+             for (let i = 0; i < 5000; i++) {
+                 try { Rustify.UI.TrackRow.Button('b' + i, 'star', () => {}); } catch (e) {}
+                 try { h.render([{ type: 'text', text: String(i) }]); } catch (e) {}
+             }",
+        );
+        if let Err(e) = &p {
+            panic!("{e}");
+        }
+        let ops = ops.lock().unwrap();
+        let delivered = ops.iter().filter(|o| matches!(o, UiOp::Control { .. } | UiOp::Section { .. } | UiOp::SectionRender { .. })).count();
+        assert!(delivered <= UI_OPS_PER_SECOND as usize, "{delivered}");
+        assert!(ops.iter().all(|o| !matches!(o, UiOp::SectionRender { nodes, .. } if nodes.len() > 100)));
+        assert!(ops.iter().any(|o| matches!(o, UiOp::Log { text, .. } if text == "bad 2")));
+        let rows = ops.iter().filter(|o| matches!(o, UiOp::Control { place, .. } if place == "trackrow")).count();
+        assert!(rows <= UI_OPS_PER_SECOND as usize);
+    }
 }
