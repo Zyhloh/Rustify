@@ -8,9 +8,19 @@ let topTracks = [];
 
 const page = Rustify.UI.Page("stats", "Listening stats", "bolt");
 const panel = Rustify.UI.NowPlaying.Section("stats", "Listening stats");
+const home = Rustify.UI.Home.Section("marked", "Your marked songs");
 
 function marked() {
   return JSON.parse(Rustify.Storage.get("marked") || "[]");
+}
+
+function toggleMark(uri) {
+  const list = marked();
+  const index = list.indexOf(uri);
+  if (index === -1) list.push(uri);
+  else list.splice(index, 1);
+  Rustify.Storage.set("marked", JSON.stringify(list.slice(-500)));
+  return index === -1;
 }
 
 function render() {
@@ -28,7 +38,11 @@ function render() {
     ...topTracks.map(t => ({ type: "row", id: "track:" + t.uri, text: t.name, sub: t.artists, image: t.image })),
   ]);
   panel.render([
-    { type: "text", text: `${plays} songs started`, sub: `${marked().length} marked songs` },
+    { type: "text", text: `${plays} songs started`, sub: `${marked().length} marked` },
+    { type: "button", id: "open", text: "Open stats" },
+  ]);
+  home.render([
+    { type: "text", text: `${marked().length} ${marked().length === 1 ? "song" : "songs"} marked`, sub: "Use the star on any song in a list, or in the player bar" },
     { type: "button", id: "open", text: "Open stats" },
   ]);
 }
@@ -69,17 +83,23 @@ panel.onAction(id => {
   if (id === "open") page.open();
 });
 
+home.onAction(id => {
+  if (id === "open") page.open();
+});
+
 Rustify.UI.Topbar.Button("Listening stats", "bolt", () => page.open());
 
 const marker = Rustify.UI.Playbar.Button("Mark this song", "star", button => {
   const track = Rustify.Player.data.track;
   if (!track) return;
-  const list = marked();
-  const index = list.indexOf(track.uri);
-  if (index === -1) list.push(track.uri);
-  else list.splice(index, 1);
-  Rustify.Storage.set("marked", JSON.stringify(list.slice(-500)));
-  button.active = index === -1;
+  button.active = toggleMark(track.uri);
+  render();
+});
+
+Rustify.UI.TrackRow.Button("Mark song", "star", (button, track) => {
+  const now = toggleMark(track.uri);
+  Rustify.showNotification(`${now ? "Marked" : "Unmarked"} ${track.title}`);
+  syncMarker();
   render();
 });
 

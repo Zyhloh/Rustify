@@ -102,7 +102,7 @@
 
   const controls = (kind, op) => (label, iconName, onClick, active) => {
     let props = { label: text(label, 40), icon: icon(iconName), active: !!active };
-    const id = handle(() => typeof onClick === "function" && onClick(button));
+    const id = handle(target => typeof onClick === "function" && onClick(button, target || undefined));
     const sync = () => call(op, { id, ...props });
     const button = {
       get label() {
@@ -175,11 +175,11 @@
         image: text(n.image ?? n.url, 500),
       }));
 
-  const section = (id, title) => {
+  const section = place => (id, title) => {
     const sectionId = text(id, 40);
     let actionHandler = null;
     const key = handle(event => actionHandler && actionHandler(event.id, event.value));
-    call("ui.section", { id: sectionId, title: text(title, 60), handle: key });
+    call("ui.section", { id: sectionId, place, title: text(title, 60), handle: key });
     return {
       render(nodes) {
         call("ui.section.render", { id: sectionId, nodes: normalize(nodes, 100) });
@@ -189,7 +189,7 @@
       },
       remove() {
         handlers.delete(key);
-        call("ui.section", { id: sectionId, remove: true });
+        call("ui.section", { id: sectionId, place, remove: true });
       },
     };
   };
@@ -259,7 +259,9 @@
       Playbar: Object.freeze({ Button: controls("playbar", "ui.playbar") }),
       ContextMenu: Object.freeze({ Item: menuItem }),
       Page: page,
-      NowPlaying: Object.freeze({ Section: section }),
+      NowPlaying: Object.freeze({ Section: section("now-playing") }),
+      Home: Object.freeze({ Section: section("home") }),
+      TrackRow: Object.freeze({ Button: controls("trackrow", "ui.trackrow") }),
       hide: element => call("ui.hide", { element: text(element, 40), hidden: true }),
       show: element => call("ui.hide", { element: text(element, 40), hidden: false }),
       elements: Object.freeze([...ELEMENTS]),

@@ -46,7 +46,7 @@ Plugins are plain JavaScript running in a sandboxed engine inside the app. They 
 
 - add buttons to the top bar and the player bar, with their own icons
 - add items to track, album, playlist and artist menus
-- add full pages and now-playing panel sections built from Rustify's own components, so they look like the rest of the app
+- add full pages, Home and now-playing cards, and buttons on every song row, all built from Rustify's own components so they look like the rest of the app
 - hide built-in buttons they replace
 - react to song changes, play and pause, and progress
 - control playback, read Spotify Web API data and keep their own settings

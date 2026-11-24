@@ -2,7 +2,7 @@ import { Theme } from "theme.slint";
 import { Icon, Icons } from "icons.slint";
 import { IconButton, PlayFab, LikedArt, EqBars, Scroller, InlineSearch, Bleed, PillButton } from "components.slint";
 import { Shelf } from "home.slint";
-import { Store, Player, Menu, TrackData } from "store.slint";
+import { Store, Player, Menu, TrackData, Plugins } from "store.slint";
 
 component ExplicitBadge inherits Rectangle {
     width: 16px;
@@ -221,6 +221,17 @@ export component TrackRow inherits Rectangle {
             text: root.data.duration;
             color: Theme.text-dim;
             font-size: 14px;
+        }
+
+        for button[i] in Plugins.row-buttons: IconButton {
+            x: cols.duration-x - (Plugins.row-buttons.length - i) * 32px;
+            icon: button.icon;
+            icon-size: 16px;
+            idle-color: Theme.text-dim;
+            active: button.active;
+            active-color: Theme.accent;
+            visible: root.lit;
+            clicked => { Plugins.row-click(button.plugin, button.id, root.data.uri, root.data.title); }
         }
 
         IconButton {

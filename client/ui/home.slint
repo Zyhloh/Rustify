@@ -1,7 +1,8 @@
 import { Theme } from "theme.slint";
 import { Icon, Icons } from "icons.slint";
 import { Chip, IconButton, Card, Shortcut, Artwork, Scroller, Bleed, PillButton } from "components.slint";
-import { Store, Player, CardData, SectionData } from "store.slint";
+import { Store, Player, CardData, SectionData, Plugins } from "store.slint";
+import { Block } from "plugins.slint";
 
 component Hero inherits Rectangle {
     height: 200px;
@@ -330,6 +331,32 @@ export component HomePage inherits Rectangle {
             }
 
             chips := HomeChips { }
+
+            for section in Plugins.home-sections: Rectangle {
+                border-radius: Theme.radius;
+                background: Theme.tile;
+                height: home-section.preferred-height;
+
+                home-section := VerticalLayout {
+                    padding: 20px;
+                    spacing: 12px;
+
+                    Text {
+                        text: section.title;
+                        color: Theme.text;
+                        font-size: 24px;
+                        font-weight: 800;
+                        letter-spacing: -0.5px;
+                        overflow: elide;
+                    }
+
+                    for b in section.blocks: Block {
+                        data: b;
+                        plugin: section.plugin;
+                        section: section.id;
+                    }
+                }
+            }
 
             if Store.library-missing: Rectangle {
                 height: 64px;

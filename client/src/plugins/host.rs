@@ -48,7 +48,7 @@ pub enum UiOp {
     Control { plugin: String, place: String, id: String, label: String, icon: String, active: bool, remove: bool },
     Menu { plugin: String, id: String, label: String, types: Vec<String>, remove: bool },
     Page { plugin: String, id: String, title: String, icon: String, handle: String, remove: bool },
-    Section { plugin: String, id: String, title: String, handle: String, remove: bool },
+    Section { plugin: String, place: String, id: String, title: String, handle: String, remove: bool },
     SectionRender { plugin: String, id: String, nodes: Vec<Value> },
     Hide { plugin: String, element: String, hidden: bool },
     Render { plugin: String, id: String, nodes: Vec<Value> },
@@ -233,14 +233,18 @@ impl Shared {
                 self.timers.remove(&(arg(payload, "id").as_u64().unwrap_or(0) as u32));
                 Ok(String::new())
             }
-            "ui.topbar" | "ui.playbar" => {
+            "ui.topbar" | "ui.playbar" | "ui.trackrow" => {
                 let control = string(payload, "id", 40);
                 let remove = arg(payload, "remove").as_bool().unwrap_or(false);
                 let icon = string(payload, "icon", 2000);
                 if !remove && !valid_icon(&icon) {
                     return fail("icon must be an SVG path in a 24x24 box");
                 }
-                let place = if op == "ui.topbar" { "topbar" } else { "playbar" };
+                let place = match op {
+                    "ui.topbar" => "topbar",
+                    "ui.playbar" => "playbar",
+                    _ => "trackrow",
+                };
                 self.ui(UiOp::Control {
                     plugin: id,
                     place: place.into(),
@@ -299,8 +303,13 @@ impl Shared {
                 if !valid_local_id(&section) {
                     return fail("section id must be 1-40 characters of a-z, 0-9, - and _");
                 }
+                let place = string(payload, "place", 20);
+                if !matches!(place.as_str(), "now-playing" | "home") {
+                    return fail("sections can go in \"now-playing\" or \"home\"");
+                }
                 self.ui(UiOp::Section {
                     plugin: id,
+                    place,
                     id: section,
                     title: string(payload, "title", 60),
                     handle: string(payload, "handle", 20),
@@ -908,5 +917,30 @@ mod tests {
         assert!(delivered <= UI_OPS_PER_SECOND as usize, "{delivered}");
         let (p, _) = plugin("bad-radius", &["theme"], "Rustify.Theme.set({ radius: '9999' })");
         assert!(p.unwrap_err().contains("radius"));
+    }
+
+    #[test]
+    fn home_sections_and_track_row_buttons() {
+        let (p, ops) = plugin(
+            "rows",
+            &[],
+            "Rustify.UI.Home.Section('welcome', 'Welcome back').render([{ type: 'text', text: 'hi' }]);
+             Rustify.UI.TrackRow.Button('Mark', 'star', (button, track) => console.log('row ' + track.uri + ' ' + track.title));",
+        );
+        let mut p = p.unwrap();
+        let row = {
+            let ops = ops.lock().unwrap();
+            assert!(ops.iter().any(|o| matches!(o, UiOp::Section { place, id, .. } if place == "home" && id == "welcome")));
+            ops.iter()
+                .find_map(|o| match o {
+                    UiOp::Control { place, id, .. } if place == "trackrow" => Some(id.clone()),
+                    _ => None,
+                })
+                .expect("track row button")
+        };
+        p.call("__action", row, Some(r#"{"uri":"spotify:track:0s3nnoMeVWz3989MkNQiRf","type":"track","title":"Song"}"#.into())).unwrap();
+        assert!(logs(&ops).iter().any(|l| l == "row spotify:track:0s3nnoMeVWz3989MkNQiRf Song"));
+        let (p, _) = plugin("bad-place", &[], "Rustify.UI.NowPlaying.Section('ok', 'x'); globalThis.__x = 1;");
+        assert!(p.is_ok());
     }
 }

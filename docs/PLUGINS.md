@@ -171,6 +171,18 @@ section.remove()
 Adds a card to the now-playing panel on the right, below the song credits. It uses the same blocks as pages, up to 100. A plugin can add 3 sections.
 
 ```js
+const card = Rustify.UI.Home.Section(id, title)
+```
+
+Same as above, shown on the Home page below the filter chips.
+
+```js
+const button = Rustify.UI.TrackRow.Button(label, icon, (button, track) => { ... })
+```
+
+Adds an icon button to every song row in playlists, albums, search, Liked Songs and history. It appears when the row is hovered, next to the duration. `track` is `{ uri, title, type }`. A plugin can add 2, and rows show at most 4 plugin buttons in total.
+
+```js
 Rustify.UI.hide("friends-button")
 Rustify.UI.show("friends-button")
 Rustify.UI.elements   // the names below
@@ -373,7 +385,8 @@ Plugins can only reach what the `Rustify` API exposes. They have no file system,
 | Buttons | 4 in the top bar, 4 in the player bar |
 | Menu items | 8 |
 | Pages | 4 |
-| Now-playing sections | 3, with up to 100 blocks each |
+| Now-playing and Home sections | 3 of each, with up to 100 blocks each |
+| Track row buttons | 2 per plugin, 4 in total |
 
 Each plugin runs in its own engine instance on a background thread, so a slow plugin cannot freeze the interface. A plugin that exceeds its time budget three times is stopped and marked as failed in Settings.
 

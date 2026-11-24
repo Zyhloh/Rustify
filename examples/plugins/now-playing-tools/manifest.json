@@ -1,9 +1,9 @@
 {
   "id": "now-playing-tools",
   "name": "Now Playing Tools",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": { "name": "Rustify", "url": "https://github.com/Zyhloh" },
-  "description": "A listening stats page and now-playing panel section, a mark-this-song button, a track menu item and song change notifications.",
+  "description": "Shows every plugin hook: a stats page, now-playing and Home cards, star buttons on track rows and the player bar, a track menu item and song change notifications.",
   "repository": "https://github.com/Zyhloh/Rustify/tree/main/examples/plugins/now-playing-tools",
   "icon": "icon.png",
   "main": "index.js",
