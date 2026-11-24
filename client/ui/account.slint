@@ -1,0 +1,998 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { IconButton, PillButton, Scroller, PlayFab, Bleed, Chip, Slider } from "components.slint";
+import { Shelf } from "home.slint";
+import { TrackRow } from "collection.slint";
+import { Store, Player, Prefs, Panels } from "store.slint";
+import { Chrome } from "topbar.slint";
+
+component MenuLine inherits Rectangle {
+    in property <string> text;
+    in property <bool> external: false;
+    callback clicked();
+
+    height: 40px;
+    border-radius: 2px;
+    background: ta.has-hover ? #3e3e3e : transparent;
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        x: 12px;
+        text: root.text;
+        color: #ebebeb;
+        font-size: 14px;
+        font-weight: 500;
+    }
+
+    if root.external: Icon {
+        x: parent.width - 30px;
+        d: Icons.external;
+        size: 16px;
+        color: #ebebeb;
+    }
+}
+
+export component AccountMenu inherits Rectangle {
+    TouchArea {
+        clicked => { Store.account-menu-open = false; }
+    }
+
+    Rectangle {
+        x: parent.width - self.width - 64px;
+        y: 60px;
+        width: 220px;
+        height: items.preferred-height;
+        border-radius: 4px;
+        background: #282828;
+        drop-shadow-blur: 24px;
+        drop-shadow-offset-y: 8px;
+        drop-shadow-color: #000000b3;
+
+        TouchArea { }
+
+        items := VerticalLayout {
+            padding: 4px;
+
+            MenuLine {
+                text: "Account";
+                external: true;
+                clicked => {
+                    Store.account-menu-open = false;
+                    Store.open-external("https://www.spotify.com/account/overview/");
+                }
+            }
+            MenuLine {
+                text: "Profile";
+                clicked => {
+                    Store.account-menu-open = false;
+                    Store.open-profile("me");
+                }
+            }
+            MenuLine {
+                text: "Recents";
+                clicked => {
+                    Store.account-menu-open = false;
+                    Store.open-history();
+                }
+            }
+            MenuLine {
+                text: "Support";
+                external: true;
+                clicked => {
+                    Store.account-menu-open = false;
+                    Store.open-external("https://support.spotify.com/");
+                }
+            }
+            MenuLine {
+                text: "Settings";
+                clicked => {
+                    Store.account-menu-open = false;
+                    Store.open-settings();
+                }
+            }
+
+            Rectangle {
+                height: 9px;
+                Rectangle { x: 4px; width: parent.width - 8px; height: 1px; background: #ffffff1a; }
+            }
+
+            MenuLine {
+                text: "Log out";
+                clicked => {
+                    Store.account-menu-open = false;
+                    Store.logout();
+                }
+            }
+        }
+    }
+}
+
+component Avatar inherits Rectangle {
+    in property <image> art;
+    in property <string> initial;
+
+    border-radius: self.width / 2;
+    background: #535353;
+    clip: true;
+    drop-shadow-blur: 40px;
+    drop-shadow-color: #00000080;
+
+    Text {
+        text: root.initial;
+        color: Theme.text;
+        font-size: root.width * 0.4;
+        font-weight: 800;
+    }
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: root.art;
+        image-fit: cover;
+        opacity: root.art.width > 0 ? 1 : 0;
+        animate opacity { duration: 300ms; }
+    }
+}
+
+component Title inherits Text {
+    color: Theme.text;
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.6px;
+}
+
+export component ProfilePage inherits Rectangle {
+    max-width: 100000px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    property <length> pad: 24px;
+    property <length> art: max(128px, min(232px, root.width * 0.24));
+
+    scroller := Scroller {
+        content-height: page.preferred-height;
+
+        page := VerticalLayout {
+            width: parent.width;
+
+            Rectangle {
+                height: root.art + 88px;
+                background: @linear-gradient(180deg, #535353 0%, #282828 100%);
+
+                HorizontalLayout {
+                    x: root.pad;
+                    y: 64px;
+                    width: parent.width - 2 * root.pad;
+                    height: root.art;
+                    spacing: 24px;
+
+                    Avatar {
+                        width: root.art;
+                        art: Store.profile.art;
+                        initial: Store.profile.name.character-count > 0 ? Store.user-initial : "";
+                    }
+
+                    VerticalLayout {
+                        alignment: end;
+                        spacing: 8px;
+
+                        Text { text: "Profile"; color: Theme.text; font-size: 14px; font-weight: 600; }
+                        Text {
+                            text: Store.profile.name;
+                            color: Theme.text;
+                            font-size: min(96px, max(40px, (root.width - root.art) / max(4, Store.profile.name.character-count) * 1.8));
+                            font-weight: 800;
+                            letter-spacing: -2px;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: "\{Store.profile.playlists} Public Playlist\{Store.profile.playlists == 1 ? "" : "s"}" + (Store.profile.followers > 0 ? " • \{Store.profile.followers} Follower\{Store.profile.followers == 1 ? "" : "s"}" : "") + " • \{Store.profile.following} Following";
+                            color: Theme.text;
+                            font-size: 14px;
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 32px;
+                background: @linear-gradient(180deg, #232323 0%, Theme.surface 100%);
+            }
+
+            VerticalLayout {
+                padding-left: root.pad;
+                padding-right: root.pad;
+                padding-bottom: 32px;
+                spacing: 32px;
+
+                if Store.profile-loading: Rectangle { height: 120px; }
+
+                if Store.profile-artists.length > 0: VerticalLayout {
+                    spacing: 2px;
+                    Text { text: "Only visible to you"; color: Theme.text-dim; font-size: 13px; }
+                    Bleed {
+                        Shelf { section: { title: "Top artists this month", items: Store.profile-artists }; }
+                    }
+                }
+
+                if Store.profile-tracks.length > 0: VerticalLayout {
+                    spacing: 8px;
+                    Text { text: "Only visible to you"; color: Theme.text-dim; font-size: 13px; }
+                    Title { text: "Top tracks this month"; }
+                    VerticalLayout {
+                        for track in Store.profile-tracks: TrackRow {
+                            data: track;
+                            show-art: true;
+                            show-album: root.width > 640px;
+                            show-third: false;
+                            play => { Store.play-profile-track(track); }
+                        }
+                    }
+                }
+
+                if Store.profile-playlists.length > 0: Bleed {
+                    Shelf { section: { title: "Public Playlists", items: Store.profile-playlists }; }
+                }
+            }
+        }
+    }
+}
+
+export component HistoryPage inherits Rectangle {
+    max-width: 100000px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    Scroller {
+        content-height: body.preferred-height;
+
+        body := VerticalLayout {
+            width: parent.width;
+            padding: 24px;
+            spacing: 16px;
+
+            Text {
+                text: "Recents";
+                color: Theme.text;
+                font-size: 32px;
+                font-weight: 800;
+                letter-spacing: -1px;
+            }
+
+            Text {
+                text: "The songs you've played lately, newest first.";
+                color: Theme.text-dim;
+                font-size: 14px;
+            }
+
+            if Store.history-loading && Store.history.length == 0: VerticalLayout {
+                spacing: 8px;
+                for _ in 6: Rectangle { height: 48px; border-radius: 4px; background: Theme.tile; opacity: 0.5; }
+            }
+
+            if !Store.history-loading && Store.history.length == 0: VerticalLayout {
+                padding-top: 48px;
+                spacing: 8px;
+
+                Text {
+                    horizontal-alignment: center;
+                    text: "Nothing here yet";
+                    color: Theme.text;
+                    font-size: 20px;
+                    font-weight: 800;
+                }
+
+                Text {
+                    horizontal-alignment: center;
+                    text: "Songs you play will show up here.";
+                    color: Theme.text-dim;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
+            }
+
+            VerticalLayout {
+                for track in Store.history: TrackRow {
+                    data: track;
+                    show-art: true;
+                    show-album: root.width > 640px;
+                    show-third: false;
+                    play => { Store.play-history-track(track); }
+                }
+            }
+        }
+    }
+}
+
+component Switch inherits Rectangle {
+    in-out property <bool> on;
+    callback toggled(bool);
+
+    width: 40px;
+    height: 22px;
+    border-radius: 11px;
+    background: root.on ? (ta.has-hover ? Theme.accent-hover : Theme.accent) : (ta.has-hover ? #8a8a8a : #727272);
+    animate background { duration: Theme.medium; }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.on = !root.on;
+            root.toggled(root.on);
+        }
+    }
+
+    Rectangle {
+        x: root.on ? root.width - self.width - 3px : 3px;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        background: root.on ? Theme.base : Theme.text;
+        drop-shadow-blur: 3px;
+        drop-shadow-color: #00000066;
+        animate x { duration: 200ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    }
+}
+
+component Group inherits Text {
+    color: Theme.text;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+component Row inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> note;
+
+    spacing: 24px;
+    min-height: 40px;
+
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: center;
+        spacing: 2px;
+        Text { text: root.label; color: Theme.text-dim; font-size: 14px; wrap: word-wrap; }
+        if root.note != "": Text { text: root.note; color: Theme.text-faint; font-size: 12px; wrap: word-wrap; }
+    }
+
+    @children
+}
+
+component Dropdown inherits Rectangle {
+    in property <string> text;
+    callback clicked(length, length);
+
+    width: max(160px, label.preferred-width + 56px);
+    height: 32px;
+    border-radius: 4px;
+    background: ta.has-hover ? #333333 : #2a2a2a;
+    animate background { duration: Theme.fast; }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(self.absolute-position.x, self.absolute-position.y + root.height + 4px); }
+    }
+
+    label := Text {
+        x: 12px;
+        vertical-alignment: center;
+        text: root.text;
+        color: Theme.text;
+        font-size: 14px;
+    }
+
+    Icon {
+        x: root.width - 28px;
+        d: Icons.chevron-down;
+        size: 16px;
+        color: Theme.text;
+    }
+}
+
+component EqGraph inherits Rectangle {
+    in property <bool> enabled;
+    property <length> left: 72px;
+    property <length> right: 48px;
+    property <length> top: 24px;
+    property <length> bottom: 44px;
+    property <length> plot-w: root.width - root.left - root.right;
+    property <length> plot-h: root.height - root.top - root.bottom;
+    property <length> step: root.plot-w / 5;
+    property <brush> tone: root.enabled ? Theme.accent : #7a7a7a;
+
+    function px(i: int) -> length { return root.left + i * root.step; }
+    function py(v: float) -> length { return root.top + (12 - v) / 24 * root.plot-h; }
+
+    height: 260px;
+    border-radius: 8px;
+    background: #ffffff0d;
+
+    Text { x: 16px; y: root.top - 8px; text: "+12dB"; color: Theme.text-dim; font-size: 12px; font-weight: 600; }
+    Text { x: 16px; y: root.top + root.plot-h - 8px; text: "-12dB"; color: Theme.text-dim; font-size: 12px; font-weight: 600; }
+
+    for i in 6: Rectangle {
+        x: root.px(i);
+        y: root.top;
+        width: 1px;
+        height: root.plot-h;
+        background: #ffffff1a;
+    }
+
+    Rectangle {
+        x: root.left - 12px;
+        y: root.py(0);
+        width: root.plot-w + 24px;
+        height: 1px;
+        background: #ffffff1a;
+    }
+
+    Path {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        fill: root.enabled ? #1ed76040 : #7a7a7a33;
+        commands: "M \{root.px(0) / 1px} \{root.py(Prefs.eq-bands[0]) / 1px} L \{root.px(1) / 1px} \{root.py(Prefs.eq-bands[1]) / 1px} L \{root.px(2) / 1px} \{root.py(Prefs.eq-bands[2]) / 1px} L \{root.px(3) / 1px} \{root.py(Prefs.eq-bands[3]) / 1px} L \{root.px(4) / 1px} \{root.py(Prefs.eq-bands[4]) / 1px} L \{root.px(5) / 1px} \{root.py(Prefs.eq-bands[5]) / 1px} L \{root.px(5) / 1px} \{(root.top + root.plot-h) / 1px} L \{root.px(0) / 1px} \{(root.top + root.plot-h) / 1px} Z";
+    }
+
+    Path {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        stroke: root.tone;
+        stroke-width: 3px;
+        commands: "M \{root.px(0) / 1px} \{root.py(Prefs.eq-bands[0]) / 1px} L \{root.px(1) / 1px} \{root.py(Prefs.eq-bands[1]) / 1px} L \{root.px(2) / 1px} \{root.py(Prefs.eq-bands[2]) / 1px} L \{root.px(3) / 1px} \{root.py(Prefs.eq-bands[3]) / 1px} L \{root.px(4) / 1px} \{root.py(Prefs.eq-bands[4]) / 1px} L \{root.px(5) / 1px} \{root.py(Prefs.eq-bands[5]) / 1px}";
+    }
+
+    for label[i] in ["60Hz", "150Hz", "400Hz", "1KHz", "2.4KHz", "15KHz"]: Text {
+        x: root.px(i) - self.preferred-width / 2;
+        y: root.height - 30px;
+        text: label;
+        color: Theme.text;
+        font-size: 13px;
+        font-weight: 700;
+    }
+
+    for i in 6: dot := Rectangle {
+        x: root.px(i) - 12px;
+        y: root.py(Prefs.eq-bands[i]) - 12px;
+        width: 24px;
+        height: 24px;
+
+        Rectangle {
+            width: drag.pressed || drag.has-hover ? 16px : 12px;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: Theme.text;
+            drop-shadow-blur: 4px;
+            drop-shadow-color: #00000080;
+            animate width { duration: Theme.fast; }
+        }
+
+        drag := TouchArea {
+            mouse-cursor: pointer;
+            moved => {
+                if self.pressed {
+                    Prefs.set-band(i, max(-12, min(12, round((12 - (dot.y + self.mouse-y - root.top) / root.plot-h * 24) * 2) / 2)));
+                }
+            }
+            pointer-event(ev) => {
+                if ev.kind == PointerEventKind.down && !Prefs.eq-on {
+                    Prefs.eq-on = true;
+                    Prefs.audio-changed();
+                }
+            }
+        }
+    }
+}
+
+export component SettingsPage inherits Rectangle {
+    max-width: 100000px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    property <bool> editing-id: false;
+
+    Scroller {
+        content-height: body.preferred-height;
+
+        body := VerticalLayout {
+            width: parent.width;
+            padding-left: max(24px, (parent.width - 820px) / 2);
+            padding-right: max(24px, (parent.width - 820px) / 2);
+            padding-top: 32px;
+            padding-bottom: 48px;
+            spacing: 32px;
+
+            Text {
+                text: "Settings";
+                color: Theme.text;
+                font-size: 32px;
+                font-weight: 800;
+                letter-spacing: -1px;
+            }
+
+            VerticalLayout {
+                spacing: 12px;
+                Group { text: "Account"; }
+
+                HorizontalLayout {
+                    spacing: 16px;
+                    height: 56px;
+
+                    Avatar {
+                        width: 56px;
+                        art: Store.user-art;
+                        initial: Store.user-initial;
+                        drop-shadow-blur: 0px;
+                    }
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+                        Text { text: Store.user-name; color: Theme.text; font-size: 16px; font-weight: 700; overflow: elide; }
+                        Text {
+                            text: (Store.me-plan == "premium" ? "Spotify Premium" : Store.me-plan == "" ? "" : "Spotify Free") + (Store.me-email != "" ? " • \{Store.me-email}" : "");
+                            color: Theme.text-dim;
+                            font-size: 13px;
+                            overflow: elide;
+                        }
+                    }
+
+                    PillButton {
+                        y: 12px;
+                        outline: true;
+                        text: "Log out";
+                        clicked => { Store.logout(); }
+                    }
+                }
+
+                Row {
+                    label: "Manage your Spotify account";
+                    note: "Plan, payments and privacy are managed on spotify.com.";
+                    PillButton {
+                        y: 4px;
+                        outline: true;
+                        text: "Open";
+                        icon: Icons.external;
+                        clicked => { Store.open-external("https://www.spotify.com/account/overview/"); }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 12px;
+                Group { text: "Spotify app"; }
+
+                Row {
+                    label: "Client ID";
+                    note: root.editing-id ? "Paste the Client ID from your app at developer.spotify.com. Rustify restarts its service to apply it." : Store.client-id;
+
+                    if !root.editing-id: PillButton {
+                        y: 4px;
+                        outline: true;
+                        text: "Change";
+                        clicked => { root.editing-id = true; }
+                    }
+                }
+
+                if root.editing-id: HorizontalLayout {
+                    spacing: 12px;
+                    height: 40px;
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        border-radius: 4px;
+                        background: #2a2a2a;
+                        border-width: id-input.has-focus ? 1px : 0px;
+                        border-color: #ffffff4d;
+
+                        id-input := TextInput {
+                            x: 12px;
+                            width: parent.width - 24px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            color: Theme.text;
+                            font-size: 14px;
+                            single-line: true;
+                            init => { self.focus(); }
+                            accepted => { Store.save-client-id(self.text); root.editing-id = false; }
+                        }
+                    }
+
+                    PillButton {
+                        y: 4px;
+                        primary: true;
+                        text: "Save";
+                        clicked => { Store.save-client-id(id-input.text); root.editing-id = false; }
+                    }
+                    PillButton {
+                        y: 4px;
+                        text: "Cancel";
+                        clicked => { root.editing-id = false; }
+                    }
+                }
+
+                if Store.setup-error != "": Text { text: Store.setup-error; color: #f15e6c; font-size: 13px; wrap: word-wrap; }
+            }
+
+            VerticalLayout {
+                spacing: 12px;
+                Group { text: "Audio quality"; }
+                Row {
+                    label: "Streaming quality";
+                    note: "Very High is 256 kbit/s, High is 128 kbit/s and uses half the data. Quality changes on the next track.";
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+                        for q in [{ key: "high", label: "High" }, { key: "very_high", label: "Very High" }]: Chip {
+                            y: 4px;
+                            text: q.label;
+                            active: Prefs.quality == q.key;
+                            clicked => { Prefs.quality = q.key; Prefs.audio-changed(); }
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 12px;
+                Group { text: "Playback"; }
+                Row {
+                    label: "Normalize volume - Set the same volume level for all songs and podcasts";
+                    Switch {
+                        y: 9px;
+                        on: Prefs.normalize;
+                        toggled(v) => { Prefs.normalize = v; Prefs.audio-changed(); }
+                    }
+                }
+                Row {
+                    label: "Volume level - Adjust the volume for your environment. Loud may diminish audio quality.";
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+                        for level in [{ key: "quiet", label: "Quiet" }, { key: "normal", label: "Normal" }, { key: "loud", label: "Loud" }]: Chip {
+                            y: 4px;
+                            text: level.label;
+                            active: Prefs.audio-level == level.key;
+                            clicked => { Prefs.audio-level = level.key; Prefs.audio-changed(); }
+                        }
+                    }
+                }
+                Row {
+                    label: "Volume slider feel";
+                    note: "How fast the volume rises as you drag. Natural follows how loudness is heard, Gentle gives finer control at low volume, Linear is the raw player curve.";
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+                        for curve in [{ key: "gentle", label: "Gentle" }, { key: "natural", label: "Natural" }, { key: "linear", label: "Linear" }]: Chip {
+                            y: 4px;
+                            text: curve.label;
+                            active: Prefs.volume-curve == curve.key;
+                            clicked => { Prefs.volume-curve = curve.key; Prefs.audio-changed(); }
+                        }
+                    }
+                }
+                Row {
+                    label: "Smooth transitions - Fade each song out and the next one in";
+                    HorizontalLayout {
+                        spacing: 12px;
+                        alignment: end;
+                        if Prefs.fade > 0: fade-slider := Slider {
+                            width: 200px;
+                            y: 12px;
+                            value: (Prefs.fade - 1) / 11;
+                            live: true;
+                            changed(v) => { Prefs.fade = round(1 + v * 11); }
+                            committed(v) => { Prefs.fade = round(1 + v * 11); Prefs.audio-changed(); }
+                        }
+                        if Prefs.fade > 0: Text { vertical-alignment: center; text: "\{Prefs.fade} sec"; color: Theme.text-dim; font-size: 13px; min-width: 44px; }
+                        Switch {
+                            y: 9px;
+                            on: Prefs.fade > 0;
+                            toggled(v) => { Prefs.fade = v ? 6 : 0; Prefs.audio-changed(); }
+                        }
+                    }
+                }
+                Row {
+                    label: "Mono audio - Makes the left and right speakers play the same audio";
+                    Switch {
+                        y: 9px;
+                        on: Prefs.mono;
+                        toggled(v) => { Prefs.mono = v; Prefs.audio-changed(); }
+                    }
+                }
+                Row {
+                    label: "Equalizer";
+                    Switch {
+                        y: 9px;
+                        on: Prefs.eq-on;
+                        toggled(v) => { Prefs.eq-on = v; Prefs.audio-changed(); }
+                    }
+                }
+                Rectangle {
+                    height: eq-box.preferred-height;
+                    border-radius: 8px;
+                    background: #ffffff08;
+
+                    eq-box := VerticalLayout {
+                        padding: 20px;
+                        spacing: 16px;
+
+                        HorizontalLayout {
+                            spacing: 16px;
+                            Text { vertical-alignment: center; text: "Presets"; color: Theme.text-dim; font-size: 14px; }
+                            Dropdown {
+                                text: Prefs.eq-preset;
+                                clicked(x, y) => { Prefs.preset-menu(x, y); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+
+                        EqGraph { enabled: Prefs.eq-on; }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 12px;
+                Group { text: "Display"; }
+                Row {
+                    label: "Show the now-playing view when playback starts";
+                    Switch {
+                        y: 9px;
+                        on: Prefs.open-on-play;
+                        toggled(v) => { Prefs.open-on-play = v; Prefs.changed(); }
+                    }
+                }
+                Row {
+                    label: "Show the friend activity button";
+                    Switch {
+                        y: 9px;
+                        on: Prefs.show-friends;
+                        toggled(v) => { Prefs.show-friends = v; Prefs.changed(); }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 12px;
+                Group { text: "Startup and window behavior"; }
+                Row {
+                    label: "Open Rustify automatically when you sign in to Windows";
+                    Switch {
+                        y: 9px;
+                        on: Prefs.start-with-windows;
+                        toggled(v) => { Prefs.start-with-windows = v; Prefs.changed(); }
+                    }
+                }
+                Row {
+                    label: "Close button minimizes Rustify instead of quitting";
+                    Switch {
+                        y: 9px;
+                        on: Prefs.minimize-on-close;
+                        toggled(v) => { Prefs.minimize-on-close = v; Prefs.changed(); }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 12px;
+                Group { text: "Storage"; }
+                Row {
+                    label: "Cache";
+                    note: "Artwork and player data stored on this computer: \{Store.cache-size}";
+                    PillButton {
+                        y: 4px;
+                        outline: true;
+                        text: "Clear cache";
+                        clicked => { Store.clear-cache(); }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 12px;
+                Group { text: "Keyboard shortcuts"; }
+                for shortcut in [
+                    { keys: "Space", action: "Play / pause" },
+                    { keys: "Ctrl + Right / Left", action: "Next / previous" },
+                    { keys: "Ctrl + Up / Down", action: "Volume up / down" },
+                    { keys: "Ctrl + S", action: "Shuffle" },
+                    { keys: "Ctrl + R", action: "Repeat" },
+                    { keys: "Ctrl + L", action: "Search" },
+                    { keys: "Alt + Left / Right", action: "Back / forward" },
+                    { keys: "Ctrl + ,", action: "Settings" },
+                    { keys: "Alt + Shift + B", action: "Like current song" },
+                    { keys: "F11", action: "Full screen" },
+                ]: HorizontalLayout {
+                    height: 32px;
+                    Text { horizontal-stretch: 1; vertical-alignment: center; text: shortcut.action; color: Theme.text-dim; font-size: 14px; }
+                    Rectangle {
+                        width: keys-text.preferred-width + 16px;
+                        height: 26px;
+                        y: 3px;
+                        border-radius: 4px;
+                        background: #2a2a2a;
+                        keys-text := Text { text: shortcut.keys; color: Theme.text; font-size: 12px; font-weight: 600; }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 8px;
+                Group { text: "About"; }
+                Text { text: "Rustify \{Store.app-version}"; color: Theme.text-dim; font-size: 14px; }
+                Text {
+                    text: "An independent Spotify client written in Rust. Not affiliated with Spotify. Playback uses Spotify's Web Playback SDK and requires Spotify Premium.";
+                    color: Theme.text-faint;
+                    font-size: 13px;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
+
+export component ElsewhereBar inherits Rectangle {
+    height: 24px;
+    background: Theme.accent;
+    clip: true;
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Store.transfer-here(); }
+    }
+
+    HorizontalLayout {
+        alignment: end;
+        padding-right: 16px;
+        spacing: 6px;
+
+        Icon {
+            y: 4px;
+            d: Icons.speaker-box;
+            size: 15px;
+            color: Theme.base;
+        }
+        Text {
+            vertical-alignment: center;
+            text: ta.has-hover ? "Play on this computer" : "Playing on \{Store.playing-elsewhere}";
+            color: Theme.base;
+            font-size: 13px;
+            font-weight: 700;
+        }
+    }
+}
+
+export component SetupOverlay inherits Rectangle {
+    background: Theme.base;
+
+    TouchArea { }
+
+    Scroller {
+        content-height: body.preferred-height;
+
+        body := VerticalLayout {
+            width: parent.width;
+            padding-left: max(32px, (parent.width - 640px) / 2);
+            padding-right: max(32px, (parent.width - 640px) / 2);
+            padding-top: 72px;
+            padding-bottom: 48px;
+            spacing: 20px;
+
+            HorizontalLayout {
+                alignment: start;
+                spacing: 14px;
+                Icon { d: Icons.logo; size: 44px; weight: 2px; color: Theme.accent; }
+                Text { vertical-alignment: center; text: "Set up Rustify"; color: Theme.text; font-size: 32px; font-weight: 800; }
+            }
+
+            Text {
+                text: "Rustify connects to Spotify through your own free Spotify developer app. This takes about a minute and only happens once.";
+                color: Theme.text-dim;
+                font-size: 15px;
+                wrap: word-wrap;
+            }
+
+            for step[i] in [
+                { title: "Open the Spotify developer dashboard", body: "Sign in with the Spotify account you'll use in Rustify.", action: "Open dashboard", url: "https://developer.spotify.com/dashboard", copy: "" },
+                { title: "Create an app", body: "Any name works. Add this Redirect URI exactly: http://127.0.0.1:8898/login  and tick Web API and Web Playback SDK.", action: "Copy Redirect URI", url: "", copy: "http://127.0.0.1:8898/login" },
+                { title: "Allow your account", body: "In the app's User Management tab, add the email of your Spotify account.", action: "", url: "", copy: "" },
+                { title: "Copy the Client ID", body: "It's on the app's Basic Information page. Paste it below.", action: "", url: "", copy: "" },
+            ]: HorizontalLayout {
+                spacing: 16px;
+
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: #2a2a2a;
+                    Text { text: i + 1; color: Theme.text; font-size: 14px; font-weight: 700; }
+                }
+
+                VerticalLayout {
+                    spacing: 6px;
+                    Text { text: step.title; color: Theme.text; font-size: 16px; font-weight: 700; wrap: word-wrap; }
+                    Text { text: step.body; color: Theme.text-dim; font-size: 14px; wrap: word-wrap; }
+                    if step.action != "": HorizontalLayout {
+                        alignment: start;
+                        PillButton {
+                            outline: true;
+                            text: step.action;
+                            icon: step.copy != "" ? Icons.link : Icons.external;
+                            clicked => {
+                                if step.copy != "" {
+                                    Store.copy-text(step.copy);
+                                } else {
+                                    Store.open-external(step.url);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                height: 48px;
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    border-radius: 24px;
+                    background: #2a2a2a;
+                    border-width: input.has-focus ? 2px : 0px;
+                    border-color: Theme.text;
+
+                    if input.text == "": Text {
+                        x: 20px;
+                        text: "Client ID";
+                        color: Theme.text-faint;
+                        font-size: 15px;
+                    }
+
+                    input := TextInput {
+                        x: 20px;
+                        width: parent.width - 40px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        color: Theme.text;
+                        font-size: 15px;
+                        single-line: true;
+                        accepted => { Store.save-client-id(self.text); }
+                    }
+                }
+
+                PillButton {
+                    y: 8px;
+                    primary: true;
+                    text: "Continue";
+                    clicked => { Store.save-client-id(input.text); }
+                }
+            }
+
+            if Store.setup-error != "": Text { text: Store.setup-error; color: #f15e6c; font-size: 14px; wrap: word-wrap; }
+
+            Text {
+                text: "Spotify Premium is required for playback.";
+                color: Theme.text-faint;
+                font-size: 13px;
+            }
+        }
+    }
+
+    Chrome { y: 0; }
+}

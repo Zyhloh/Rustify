@@ -1,0 +1,358 @@
+import { Theme, Fmt } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { IconButton, Slider, LikeButton } from "components.slint";
+import { PlayButton, RepeatButton } from "playerbar.slint";
+import { Player, Shell } from "store.slint";
+
+component Backdrop inherits Rectangle {
+    background: #000000;
+    clip: true;
+
+    Image {
+        width: max(root.width, root.height) * 1.4;
+        height: self.width;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        source: Player.art-large;
+        image-fit: cover;
+        opacity: Player.art-large.width > 0 ? 0.55 : 0;
+        animate opacity { duration: 600ms; }
+    }
+
+    Rectangle {
+        background: @linear-gradient(180deg, #000000a6 0%, #00000059 40%, #000000e6 100%);
+    }
+}
+
+component Controls inherits HorizontalLayout {
+    in property <length> play-size: 56px;
+    in property <length> icon-size: 22px;
+
+    alignment: center;
+    spacing: root.play-size * 0.4;
+
+    IconButton {
+        y: (root.play-size - self.height) / 2;
+        icon: Icons.shuffle;
+        icon-size: root.icon-size;
+        dot: true;
+        active: Player.shuffle;
+        enabled: Player.ready;
+        idle-color: #ffffffb3;
+        clicked => { Player.toggle-shuffle(); }
+    }
+
+    IconButton {
+        y: (root.play-size - self.height) / 2;
+        icon: Icons.prev;
+        filled: true;
+        icon-size: root.icon-size;
+        enabled: Player.ready;
+        idle-color: #ffffffd9;
+        clicked => { Player.prev(); }
+    }
+
+    PlayButton { size: root.play-size; }
+
+    IconButton {
+        y: (root.play-size - self.height) / 2;
+        icon: Icons.next;
+        filled: true;
+        icon-size: root.icon-size;
+        enabled: Player.ready;
+        idle-color: #ffffffd9;
+        clicked => { Player.next(); }
+    }
+
+    RepeatButton { y: (root.play-size - self.height) / 2; }
+}
+
+component Progress inherits HorizontalLayout {
+    spacing: 8px;
+    height: 16px;
+
+    Text {
+        min-width: 44px;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+        text: Fmt.time(bar.dragging ? bar.shown * Player.duration : Player.position);
+        color: #ffffffb3;
+        font-size: 12px;
+    }
+
+    bar := Slider {
+        horizontal-stretch: 1;
+        value: Player.duration > 0 ? Player.position / Player.duration : 0;
+        committed(v) => { Player.seek(v * Player.duration); }
+    }
+
+    Text {
+        min-width: 44px;
+        vertical-alignment: center;
+        text: Fmt.time(Player.duration);
+        color: #ffffffb3;
+        font-size: 12px;
+    }
+}
+
+export component FullscreenView inherits Rectangle {
+    property <length> art: min(root.height * 0.34, root.width * 0.24);
+
+    forward-focus: keys;
+
+    keys := FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                Shell.toggle-fullscreen();
+                return accept;
+            }
+            if event.text == " " {
+                Player.toggle();
+                return accept;
+            }
+            return reject;
+        }
+
+        Backdrop { }
+
+        TouchArea {
+            double-clicked => { Shell.toggle-fullscreen(); }
+        }
+
+        VerticalLayout {
+            x: 48px;
+            y: 40px;
+            width: root.width - 96px;
+            height: 48px;
+
+            Text {
+                text: "PLAYING FROM";
+                color: #ffffffb3;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 1.2px;
+            }
+
+            Text {
+                text: Player.context-title != "" ? Player.context-title : Player.title;
+                color: Theme.text;
+                font-size: 16px;
+                font-weight: 700;
+                overflow: elide;
+            }
+        }
+
+        HorizontalLayout {
+            x: 48px;
+            y: root.height - root.art - 160px;
+            width: root.width - 96px;
+            height: root.art;
+            spacing: 32px;
+
+            Rectangle {
+                width: root.art;
+                border-radius: 8px;
+                background: Theme.surface-high;
+                clip: true;
+                drop-shadow-blur: 48px;
+                drop-shadow-color: #000000b3;
+
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: Player.art-large;
+                    image-fit: cover;
+                }
+            }
+
+            VerticalLayout {
+                alignment: end;
+                spacing: 8px;
+
+                Text {
+                    text: Player.title;
+                    color: Theme.text;
+                    font-size: min(72px, max(32px, root.width / 22));
+                    font-weight: 800;
+                    letter-spacing: -1.4px;
+                    overflow: elide;
+                }
+
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: 12px;
+
+                    Text {
+                        vertical-alignment: center;
+                        text: Player.artists;
+                        color: #ffffffcc;
+                        font-size: 22px;
+                        font-weight: 600;
+                        overflow: elide;
+                    }
+
+                    LikeButton {
+                        size: 22px;
+                        liked: Player.saved;
+                        toggled => { Player.save-pressed(); }
+                    }
+                }
+            }
+        }
+
+        Progress {
+            x: 48px;
+            y: root.height - 104px;
+            width: root.width - 96px;
+        }
+
+        Controls {
+            x: 0;
+            y: root.height - 76px;
+            width: root.width;
+            height: 56px;
+        }
+
+        IconButton {
+            x: root.width - 48px - self.width;
+            y: root.height - 64px;
+            icon: Icons.collapse;
+            icon-size: 20px;
+            idle-color: #ffffffb3;
+            clicked => { Shell.toggle-fullscreen(); }
+        }
+    }
+}
+
+export component MiniView inherits Rectangle {
+    property <bool> hovering: area.has-hover;
+
+    background: #000000;
+    clip: true;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: Player.art-large;
+        image-fit: cover;
+        opacity: Player.art-large.width > 0 ? 1 : 0;
+        animate opacity { duration: 400ms; }
+    }
+
+    if !Player.has-track: Icon {
+        d: Icons.note;
+        size: 56px;
+        color: Theme.text-faint;
+    }
+
+    Rectangle {
+        background: @linear-gradient(180deg, #00000099 0%, #00000000 30%, #00000000 45%, #000000e6 100%);
+        opacity: root.hovering || !Player.playing ? 1 : 0.85;
+        animate opacity { duration: 200ms; }
+    }
+
+    area := TouchArea {
+        pointer-event(ev) => {
+            if ev.button == PointerEventButton.left && ev.kind == PointerEventKind.down {
+                Shell.drag();
+            }
+        }
+
+        HorizontalLayout {
+            x: 8px;
+            y: 8px;
+            width: root.width - 16px;
+            height: 32px;
+            alignment: end;
+            spacing: 4px;
+            opacity: root.hovering ? 1 : 0;
+            animate opacity { duration: 200ms; }
+
+            IconButton {
+                icon: Icons.expand;
+                icon-size: 16px;
+                idle-color: #ffffffd9;
+                clicked => { Shell.exit-mini(); }
+            }
+
+            IconButton {
+                icon: Icons.win-close;
+                icon-size: 16px;
+                idle-color: #ffffffd9;
+                clicked => { Shell.exit-mini(); }
+            }
+        }
+
+        VerticalLayout {
+            x: 16px;
+            y: root.height - 128px;
+            width: root.width - 32px;
+            height: 116px;
+            spacing: 8px;
+
+            HorizontalLayout {
+                spacing: 8px;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+
+                    Text {
+                        text: Player.has-track ? Player.title : "Nothing playing";
+                        color: Theme.text;
+                        font-size: 15px;
+                        font-weight: 700;
+                        overflow: elide;
+                    }
+
+                    Text {
+                        text: Player.artists;
+                        color: #ffffffb3;
+                        font-size: 13px;
+                        overflow: elide;
+                    }
+                }
+
+                if Player.has-track: LikeButton {
+                    y: 4px;
+                    liked: Player.saved;
+                    toggled => { Player.save-pressed(); }
+                }
+            }
+
+            Slider {
+                value: Player.duration > 0 ? Player.position / Player.duration : 0;
+                committed(v) => { Player.seek(v * Player.duration); }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: 20px;
+                height: 40px;
+
+                IconButton {
+                    y: 4px;
+                    icon: Icons.prev;
+                    filled: true;
+                    icon-size: 18px;
+                    enabled: Player.ready;
+                    idle-color: #ffffffd9;
+                    clicked => { Player.prev(); }
+                }
+
+                PlayButton { y: 2px; size: 36px; }
+
+                IconButton {
+                    y: 4px;
+                    icon: Icons.next;
+                    filled: true;
+                    icon-size: 18px;
+                    enabled: Player.ready;
+                    idle-color: #ffffffd9;
+                    clicked => { Player.next(); }
+                }
+            }
+        }
+    }
+}

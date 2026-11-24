@@ -1,0 +1,355 @@
+import { Theme, Fmt } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { IconButton, Slider, LikeButton, VolumeButton, PillButton } from "components.slint";
+import { Player, Shell, Store, Panels } from "store.slint";
+
+export component PlayButton inherits Rectangle {
+    in property <length> size: 36px;
+
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: ta.has-hover ? #ffffff : #f2f2f2;
+    opacity: Player.ready ? 1 : 0.4;
+    transform-scale: !Player.ready ? 1 : ta.pressed ? 0.92 : ta.has-hover ? 1.06 : 1;
+    animate transform-scale { duration: 140ms; easing: ease-out; }
+    animate opacity { duration: Theme.medium; }
+
+    ta := TouchArea {
+        enabled: Player.ready;
+        mouse-cursor: pointer;
+        clicked => { Player.toggle(); }
+    }
+
+    Icon {
+        d: Icons.play;
+        filled: true;
+        size: root.size * 0.58;
+        color: Theme.base;
+        opacity: Player.playing ? 0 : 1;
+        transform-scale: Player.playing ? 0.6 : 1;
+        animate opacity, transform-scale { duration: 160ms; easing: ease-out; }
+    }
+
+    Icon {
+        d: Icons.pause;
+        filled: true;
+        size: root.size * 0.58;
+        color: Theme.base;
+        opacity: Player.playing ? 1 : 0;
+        transform-scale: Player.playing ? 1 : 0.6;
+        animate opacity, transform-scale { duration: 160ms; easing: ease-out; }
+    }
+}
+
+export component RepeatButton inherits Rectangle {
+    width: 32px;
+    height: 32px;
+
+    IconButton {
+        icon: Icons.repeat;
+        icon-size: 18px;
+        dot: true;
+        active: Player.repeat != "off" && !Player.dj;
+        enabled: Player.ready && !Player.dj;
+        clicked => { Player.cycle-repeat(); }
+    }
+
+    Rectangle {
+        x: 19px;
+        y: 4px;
+        width: 11px;
+        height: 11px;
+        border-radius: 5.5px;
+        background: Theme.accent;
+        opacity: Player.repeat == "track" ? 1 : 0;
+        transform-scale: Player.repeat == "track" ? 1 : 0.3;
+        animate opacity { duration: 140ms; }
+        animate transform-scale { duration: 260ms; easing: cubic-bezier(0.34, 1.7, 0.64, 1); }
+
+        Text {
+            text: "1";
+            color: Theme.base;
+            font-size: 8px;
+            font-weight: 800;
+        }
+    }
+}
+
+export component PlayerBar inherits Rectangle {
+    max-width: 100000px;
+    height: 72px;
+    background: Theme.base;
+
+    property <length> side: (root.width - middle.width) / 2;
+    property <bool> roomy: root.width >= 1280px;
+    property <bool> mid: root.width >= 1040px;
+    property <float> restore-volume: 0.7;
+
+    HorizontalLayout {
+        x: 8px;
+        width: root.side - 16px;
+        alignment: start;
+        spacing: 12px;
+        opacity: Player.has-track ? 1 : 0;
+        animate opacity { duration: 300ms; }
+
+        Rectangle {
+            y: 8px;
+            width: 56px;
+            height: 56px;
+            border-radius: 4px;
+            background: Theme.surface-high;
+            clip: true;
+            drop-shadow-blur: 8px;
+            drop-shadow-color: #00000080;
+
+            Image {
+                width: 100%;
+                height: 100%;
+                source: Player.art;
+                image-fit: cover;
+                opacity: Player.art.width > 0 ? 1 : 0;
+                animate opacity { duration: 260ms; }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            max-width: root.side - 130px;
+
+            title := Text {
+                text: Player.title;
+                color: Theme.text;
+                font-size: 14px;
+                font-weight: 600;
+                overflow: elide;
+            }
+
+            Text {
+                text: Player.artists;
+                color: Theme.text-dim;
+                font-size: 12px;
+                overflow: elide;
+            }
+        }
+
+        if !Player.voice: LikeButton {
+            y: 20px;
+            liked: Player.saved;
+            toggled => { Player.save-pressed(); }
+        }
+    }
+
+    if !Player.has-track && Store.player-status != "ready" && Store.player-status != "idle": HorizontalLayout {
+        x: 16px;
+        width: root.side - 32px;
+        alignment: start;
+        spacing: 12px;
+
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: Store.player-status == "error" ? Theme.danger : Store.player-status == "needs-login" ? Theme.text-faint : #f5a623;
+            opacity: Store.player-status == "login" || Store.player-status == "connecting" ? 0.4 + 0.6 * abs(sin(animation-tick() / 1ms * 0.2deg)) : 1;
+        }
+
+        Text {
+            vertical-alignment: center;
+            overflow: elide;
+            color: Theme.text-dim;
+            font-size: 13px;
+            text: Store.player-status == "needs-login" ? "Playback isn't set up on this computer"
+                : Store.player-status == "login" ? "Approve playback in your browser"
+                : Store.player-status == "connecting" ? "Connecting playback…"
+                : "Playback unavailable";
+        }
+
+        if Store.player-status == "needs-login" || Store.player-status == "error": PillButton {
+            y: (parent.height - self.height) / 2;
+            primary: Store.player-status == "needs-login";
+            outline: Store.player-status == "error";
+            text: Store.player-status == "needs-login" ? "Connect playback" : "Retry";
+            clicked => { Store.login(); }
+        }
+    }
+
+    middle := VerticalLayout {
+        x: (root.width - self.width) / 2;
+        width: max(280px, min(722px, root.width * 0.4, root.width - 2 * (root.mid ? 330px : 230px)));
+        padding-top: 8px;
+        padding-bottom: 6px;
+        spacing: 2px;
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 14px;
+            height: 36px;
+
+            IconButton {
+                y: 2px;
+                icon: Icons.shuffle;
+                icon-size: 18px;
+                dot: true;
+                active: Player.shuffle && !Player.dj;
+                enabled: Player.ready && !Player.dj;
+                clicked => { Player.toggle-shuffle(); }
+            }
+
+            IconButton {
+                y: 2px;
+                icon: Icons.prev;
+                filled: true;
+                icon-size: 18px;
+                enabled: Player.ready;
+                clicked => { Player.prev(); }
+            }
+
+            PlayButton { }
+
+            IconButton {
+                y: 2px;
+                icon: Icons.next;
+                filled: true;
+                icon-size: 18px;
+                enabled: Player.ready;
+                clicked => { Player.next(); }
+            }
+
+            RepeatButton { y: 2px; }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            height: 16px;
+
+            Text {
+                min-width: 40px;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+                text: Player.voice ? "-:--" : Fmt.time(progress.dragging ? progress.shown * Player.duration : Player.position);
+                color: Theme.text-dim;
+                font-size: 12px;
+            }
+
+            progress := Slider {
+                horizontal-stretch: 1;
+                value: Player.voice || Player.duration <= 0 ? 0 : Player.position / Player.duration;
+                enabled: !Player.voice;
+                committed(v) => { Player.seek(v * Player.duration); }
+            }
+
+            Text {
+                min-width: 40px;
+                vertical-alignment: center;
+                text: Player.voice ? "-:--" : Fmt.time(Player.duration);
+                color: Theme.text-dim;
+                font-size: 12px;
+            }
+        }
+    }
+
+    HorizontalLayout {
+        x: root.width - self.width - 12px;
+        alignment: end;
+        spacing: 2px;
+
+        if Player.dj: Rectangle {
+            y: 18px;
+            width: 36px;
+            height: 36px;
+            border-radius: 18px;
+            background: dj-ta.has-hover ? #2d7dff : #1e6bf0;
+            transform-scale: dj-ta.pressed ? 0.92 : dj-ta.has-hover ? 1.05 : 1;
+            animate background { duration: Theme.fast; }
+            animate transform-scale { duration: 140ms; easing: ease-out; }
+
+            dj-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Player.next(); }
+            }
+
+            Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                border-width: 3px;
+                border-color: #1ed760;
+            }
+        }
+
+        IconButton {
+            y: 20px;
+            icon: Icons.panel;
+            icon-size: 18px;
+            dot: true;
+            active: Shell.right-panel == "nowplaying";
+            clicked => { Panels.open-panel("nowplaying"); }
+        }
+        if root.mid: IconButton {
+            y: 20px;
+            icon: Icons.lyrics;
+            icon-size: 18px;
+            dot: true;
+            active: Store.page == "lyrics";
+            enabled: Player.has-track;
+            clicked => { Panels.toggle-lyrics(); }
+        }
+        IconButton {
+            y: 20px;
+            icon: Icons.queue;
+            icon-size: 18px;
+            dot: true;
+            active: Shell.right-panel == "queue";
+            clicked => { Panels.open-panel("queue"); }
+        }
+        IconButton {
+            y: 20px;
+            icon: Icons.devices;
+            icon-size: 18px;
+            dot: true;
+            active: Shell.right-panel == "devices";
+            clicked => { Panels.open-panel("devices"); }
+        }
+
+        VolumeButton {
+            y: 20px;
+            level: Player.volume;
+            clicked => {
+                if Player.volume > 0.001 {
+                    root.restore-volume = Player.volume;
+                    Player.commit-volume(0);
+                } else {
+                    Player.commit-volume(root.restore-volume);
+                }
+            }
+        }
+
+        Slider {
+            y: 28px;
+            width: root.mid ? 96px : 64px;
+            live: true;
+            value: Player.volume;
+            changed(v) => { Player.set-volume(v); }
+            committed(v) => { Player.commit-volume(v); }
+        }
+
+        if root.roomy: Rectangle { width: 6px; }
+        if root.roomy: IconButton {
+            y: 20px;
+            icon: Icons.mini-player;
+            icon-size: 18px;
+            clicked => { Shell.enter-mini(); }
+        }
+        if root.roomy: IconButton {
+            y: 20px;
+            icon: Icons.fullscreen;
+            icon-size: 18px;
+            enabled: Player.has-track;
+            clicked => { Shell.toggle-fullscreen(); }
+        }
+    }
+}

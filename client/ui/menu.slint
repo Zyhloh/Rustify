@@ -1,0 +1,484 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { LikedArt, Scroller, PillButton } from "components.slint";
+import { Menu, Toast, Credits, Store } from "store.slint";
+
+component MenuItem inherits Rectangle {
+    in property <string> icon;
+    in property <string> text;
+    in property <bool> submenu: false;
+    in property <bool> liked-icon: false;
+    in property <bool> checked: false;
+    in property <bool> highlighted: false;
+    in property <bool> has-art: false;
+    in property <image> art;
+    out property <bool> hovered: ta.has-hover;
+    callback clicked();
+    callback entered();
+
+    height: 40px;
+    border-radius: 2px;
+    background: ta.has-hover || root.highlighted ? #3e3e3e : transparent;
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        changed has-hover => {
+            if self.has-hover {
+                root.entered();
+            }
+        }
+    }
+
+    if root.liked-icon: LikedArt {
+        x: 12px;
+        width: 16px;
+        height: 16px;
+        border-radius: 2px;
+        icon-size: 9px;
+    }
+
+    if root.has-art: Rectangle {
+        x: 8px;
+        width: 28px;
+        height: 28px;
+        border-radius: 3px;
+        background: Theme.surface-high;
+        clip: true;
+
+        if root.art.width == 0: Icon {
+            d: Icons.note;
+            size: 14px;
+            color: Theme.text-faint;
+        }
+
+        Image {
+            width: 100%;
+            height: 100%;
+            source: root.art;
+            image-fit: cover;
+            opacity: root.art.width > 0 ? 1 : 0;
+            animate opacity { duration: 200ms; }
+        }
+    }
+
+    if !root.liked-icon && !root.has-art && root.icon != "": Icon {
+        x: 12px;
+        d: root.icon;
+        size: 16px;
+        weight: 1.5px;
+        color: root.checked ? Theme.accent : ta.has-hover ? Theme.text : #e6e6e6;
+    }
+
+    Text {
+        x: root.has-art ? 46px : 40px;
+        width: root.width - self.x - (root.submenu || root.checked ? 32px : 12px);
+        text: root.text;
+        color: root.checked ? Theme.accent : #ebebeb;
+        font-size: 14px;
+        font-weight: 500;
+        overflow: elide;
+    }
+
+    if root.submenu: Icon {
+        x: root.width - 26px;
+        d: Icons.chevron-right;
+        size: 14px;
+        weight: 1.8px;
+        color: #ebebeb;
+    }
+
+    if root.checked: Icon {
+        x: root.width - 28px;
+        d: Icons.check;
+        size: 16px;
+        weight: 2px;
+        color: Theme.accent;
+    }
+}
+
+component Separator inherits Rectangle {
+    height: 9px;
+
+    Rectangle {
+        x: 4px;
+        width: parent.width - 8px;
+        height: 1px;
+        background: #ffffff1a;
+    }
+}
+
+component Panel inherits Rectangle {
+    background: #282828;
+    border-radius: 4px;
+    drop-shadow-blur: 24px;
+    drop-shadow-offset-y: 8px;
+    drop-shadow-color: #000000b3;
+    clip: true;
+
+    TouchArea { }
+}
+
+export component ContextMenu inherits Rectangle {
+    property <length> menu-width: 290px;
+    property <length> sub-width: 260px;
+    property <length> extra: Menu.removable ? 40px : 0px;
+    property <length> menu-height: 9 * 40px + 3 * 9px + 8px + root.extra;
+    property <length> mx: max(8px, min(Menu.x, root.width - root.menu-width - 8px));
+    property <length> my: max(8px, min(Menu.y, root.height - root.menu-height - 8px));
+    property <bool> sub-left: root.mx + root.menu-width + root.sub-width + 8px > root.width;
+    property <length> sub-x: root.sub-left ? root.mx - root.sub-width + 4px : root.mx + root.menu-width - 4px;
+    property <length> sub-anchor: 0px;
+
+    TouchArea {
+        clicked => { Menu.close(); }
+        pointer-event(ev) => {
+            if ev.button == PointerEventButton.right && ev.kind == PointerEventKind.down {
+                Menu.close();
+            }
+        }
+    }
+
+    Panel {
+        x: root.mx;
+        y: root.my;
+        width: root.menu-width;
+        height: root.menu-height;
+
+        VerticalLayout {
+            padding: 4px;
+
+            add := MenuItem {
+                icon: Icons.plus;
+                text: "Add to playlist";
+                submenu: true;
+                highlighted: Menu.sub == "playlist";
+                entered => { root.sub-anchor = 0px; Menu.sub = "playlist"; }
+                clicked => { root.sub-anchor = 0px; Menu.sub = "playlist"; }
+            }
+
+            if Menu.removable: MenuItem {
+                icon: Icons.delete;
+                text: "Remove from this playlist";
+                entered => { Menu.sub = ""; }
+                clicked => { Menu.action("remove"); }
+            }
+
+            MenuItem {
+                liked-icon: true;
+                text: Menu.liked ? "Remove from your Liked Songs" : "Save to your Liked Songs";
+                entered => { Menu.sub = ""; }
+                clicked => { Menu.action("like"); }
+            }
+
+            MenuItem {
+                icon: Icons.queue;
+                text: "Add to queue";
+                entered => { Menu.sub = ""; }
+                clicked => { Menu.action("queue"); }
+            }
+
+            Separator { }
+
+            MenuItem {
+                icon: Icons.timer;
+                text: Menu.sleep != "" ? "Sleep timer · \{Menu.sleep}" : "Sleep timer";
+                submenu: true;
+                highlighted: Menu.sub == "sleep";
+                entered => { root.sub-anchor = 3 * 40px + 9px + root.extra; Menu.sub = "sleep"; }
+                clicked => { root.sub-anchor = 3 * 40px + 9px + root.extra; Menu.sub = "sleep"; }
+            }
+
+            Separator { }
+
+            MenuItem {
+                icon: Icons.radio;
+                text: "Go to song radio";
+                entered => { Menu.sub = ""; }
+                clicked => { Menu.action("radio"); }
+            }
+
+            MenuItem {
+                icon: Icons.person;
+                text: "Go to artist";
+                submenu: Menu.artists.length > 1;
+                highlighted: Menu.sub == "artist";
+                entered => {
+                    root.sub-anchor = 5 * 40px + 2 * 9px + root.extra;
+                    Menu.sub = Menu.artists.length > 1 ? "artist" : "";
+                }
+                clicked => {
+                    if Menu.artists.length > 1 {
+                        root.sub-anchor = 5 * 40px + 2 * 9px + root.extra;
+                        Menu.sub = "artist";
+                    } else if Menu.artists.length == 1 {
+                        Menu.action("artist:" + Menu.artists[0].id);
+                    }
+                }
+            }
+
+            MenuItem {
+                icon: Icons.album;
+                text: "Go to album";
+                entered => { Menu.sub = ""; }
+                clicked => { Menu.action("album"); }
+            }
+
+            MenuItem {
+                icon: Icons.credits;
+                text: "View credits";
+                entered => { Menu.sub = ""; }
+                clicked => { Menu.action("credits"); }
+            }
+
+            Separator { }
+
+            MenuItem {
+                icon: Icons.share;
+                text: "Share";
+                submenu: true;
+                highlighted: Menu.sub == "share";
+                entered => { root.sub-anchor = 8 * 40px + 3 * 9px + root.extra; Menu.sub = "share"; }
+                clicked => { root.sub-anchor = 8 * 40px + 3 * 9px + root.extra; Menu.sub = "share"; }
+            }
+        }
+    }
+
+    if Menu.sub == "playlist": Panel {
+        x: root.sub-x;
+        y: max(8px, min(root.my, root.height - self.height - 8px));
+        width: root.sub-width;
+        height: min(400px, 4px + 40px + 40px + 9px + Menu.playlists.length * 40px + 8px);
+
+        VerticalLayout {
+            padding: 4px;
+
+            Rectangle {
+                height: 40px;
+
+                Rectangle {
+                    x: 4px;
+                    width: parent.width - 8px;
+                    height: 32px;
+                    border-radius: 4px;
+                    background: #3e3e3e;
+
+                    Icon { x: 10px; d: Icons.search; size: 15px; color: Theme.text-dim; }
+
+                    if search.text == "": Text {
+                        x: 34px;
+                        text: "Find a playlist";
+                        color: Theme.text-dim;
+                        font-size: 13px;
+                    }
+
+                    search := TextInput {
+                        x: 34px;
+                        width: parent.width - 44px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        color: Theme.text;
+                        font-size: 13px;
+                        single-line: true;
+                        edited => { Menu.search(self.text); }
+                    }
+                }
+            }
+
+            MenuItem {
+                icon: Icons.plus;
+                text: "New playlist";
+                clicked => { Menu.create(); }
+            }
+
+            Separator { }
+
+            Scroller {
+                vertical-stretch: 1;
+                content-height: list.preferred-height;
+
+                list := VerticalLayout {
+                    width: parent.width;
+                    for item in Menu.playlists: MenuItem {
+                        text: item.title;
+                        has-art: true;
+                        art: item.art;
+                        clicked => { Menu.add-to(item.id); }
+                    }
+                }
+            }
+        }
+    }
+
+    if Menu.sub == "sleep": Panel {
+        x: root.sub-x;
+        y: max(8px, min(root.my + root.sub-anchor, root.height - self.height - 8px));
+        width: 220px;
+        height: (Menu.sleep != "" ? 8 : 7) * 40px + 8px;
+
+        VerticalLayout {
+            padding: 4px;
+            for option in [
+                { key: "5", label: "5 minutes" },
+                { key: "10", label: "10 minutes" },
+                { key: "15", label: "15 minutes" },
+                { key: "30", label: "30 minutes" },
+                { key: "45", label: "45 minutes" },
+                { key: "60", label: "1 hour" },
+                { key: "end", label: "End of track" },
+            ]: MenuItem {
+                text: option.label;
+                clicked => { Menu.action("sleep:" + option.key); }
+            }
+
+            if Menu.sleep != "": MenuItem {
+                text: "Turn off timer";
+                clicked => { Menu.action("sleep:off"); }
+            }
+        }
+    }
+
+    if Menu.sub == "artist": Panel {
+        x: root.sub-x;
+        y: max(8px, min(root.my + root.sub-anchor, root.height - self.height - 8px));
+        width: 240px;
+        height: Menu.artists.length * 40px + 8px;
+
+        VerticalLayout {
+            padding: 4px;
+            for artist in Menu.artists: MenuItem {
+                text: artist.name;
+                clicked => { Menu.action("artist:" + artist.id); }
+            }
+        }
+    }
+
+    if Menu.sub == "share": Panel {
+        x: root.sub-x;
+        y: max(8px, min(root.my + root.sub-anchor, root.height - self.height - 8px));
+        width: 220px;
+        height: 2 * 40px + 8px;
+
+        VerticalLayout {
+            padding: 4px;
+            MenuItem {
+                icon: Icons.link;
+                text: "Copy Song Link";
+                clicked => { Menu.action("copy-link"); }
+            }
+            MenuItem {
+                icon: Icons.code;
+                text: "Embed track";
+                clicked => { Menu.action("copy-embed"); }
+            }
+        }
+    }
+}
+
+export component ToastBar inherits Rectangle {
+    width: label.preferred-width + 32px;
+    height: 36px;
+    border-radius: 6px;
+    background: #f2f2f2;
+    drop-shadow-blur: 16px;
+    drop-shadow-color: #00000080;
+    opacity: Toast.shown ? 1 : 0;
+    animate opacity { duration: 200ms; }
+
+    label := Text {
+        text: Toast.text;
+        color: Theme.base;
+        font-size: 14px;
+        font-weight: 600;
+    }
+}
+
+export component CreditsDialog inherits Rectangle {
+    background: #000000b3;
+
+    TouchArea {
+        clicked => { Credits.close(); }
+    }
+
+    Rectangle {
+        width: min(480px, root.width - 64px);
+        height: min(body.preferred-height, root.height - 96px);
+        border-radius: 8px;
+        background: #282828;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #000000b3;
+        clip: true;
+        transform-scale: Credits.open ? 1 : 0.96;
+        animate transform-scale { duration: 220ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+        TouchArea { }
+
+        body := VerticalLayout {
+            padding: 24px;
+            spacing: 16px;
+
+            HorizontalLayout {
+                Text {
+                    horizontal-stretch: 1;
+                    text: "Credits";
+                    color: Theme.text;
+                    font-size: 24px;
+                    font-weight: 800;
+                }
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: close-ta.has-hover ? Theme.tile : transparent;
+                    close-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Credits.close(); }
+                    }
+                    Icon { d: Icons.close; size: 18px; color: Theme.text; }
+                }
+            }
+
+            Text {
+                text: Credits.title;
+                color: Theme.text;
+                font-size: 16px;
+                font-weight: 700;
+                overflow: elide;
+            }
+
+            VerticalLayout {
+                spacing: 4px;
+                Text { text: "Performed by"; color: Theme.text; font-size: 14px; font-weight: 700; }
+                for artist in Credits.artists: Rectangle {
+                    height: 26px;
+                    artist-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            Credits.close();
+                            Store.open-artist(artist.id);
+                        }
+                    }
+                    Text {
+                        x: 0;
+                        text: artist.name;
+                        color: artist-ta.has-hover ? Theme.text : Theme.text-dim;
+                        font-size: 14px;
+                    }
+                }
+            }
+
+            if Credits.album != "": VerticalLayout {
+                spacing: 4px;
+                Text { text: "Album"; color: Theme.text; font-size: 14px; font-weight: 700; }
+                Text { text: Credits.album; color: Theme.text-dim; font-size: 14px; wrap: word-wrap; }
+            }
+
+            if Credits.release != "" || Credits.label != "": VerticalLayout {
+                spacing: 4px;
+                Text { text: "Source"; color: Theme.text; font-size: 14px; font-weight: 700; }
+                if Credits.release != "": Text { text: "Released \{Credits.release}"; color: Theme.text-dim; font-size: 14px; }
+                if Credits.label != "": Text { text: Credits.label; color: Theme.text-dim; font-size: 14px; wrap: word-wrap; }
+            }
+        }
+    }
+}

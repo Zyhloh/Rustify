@@ -1,0 +1,314 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { LikedArt, Scroller } from "components.slint";
+import { Picker, PickerItem } from "store.slint";
+
+component Toggle inherits Rectangle {
+    in property <bool> checked;
+    in property <bool> hovered;
+
+    width: 20px;
+    height: 20px;
+
+    Icon {
+        d: Icons.circle;
+        size: 22px;
+        weight: 1.5px;
+        color: root.hovered ? Theme.text : #ffffffb3;
+        opacity: root.checked ? 0 : 1;
+        animate opacity { duration: 120ms; }
+    }
+
+    Rectangle {
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: Theme.accent;
+        opacity: root.checked ? 1 : 0;
+        transform-scale: root.checked ? 1 : 0.4;
+        animate opacity { duration: 120ms; }
+        animate transform-scale { duration: 300ms; easing: cubic-bezier(0.34, 1.7, 0.64, 1); }
+
+        Icon {
+            d: Icons.check;
+            size: 15px;
+            weight: 2.4px;
+            color: Theme.base;
+        }
+    }
+}
+
+component PickerRow inherits Rectangle {
+    in property <PickerItem> item;
+
+    height: 52px;
+    border-radius: 4px;
+    background: ta.has-hover ? #ffffff1a : transparent;
+    animate background { duration: Theme.fast; }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Picker.toggle(root.item.id); }
+    }
+
+    Rectangle {
+        x: 8px;
+        width: 40px;
+        height: 40px;
+        border-radius: 4px;
+        background: Theme.surface-high;
+        clip: true;
+
+        if root.item.kind == "liked": LikedArt {
+            width: 100%;
+            height: 100%;
+            icon-size: 16px;
+        }
+
+        if root.item.kind != "liked" && root.item.image-url == "": Icon {
+            d: Icons.note;
+            size: 18px;
+            color: Theme.text-faint;
+        }
+
+        Image {
+            width: 100%;
+            height: 100%;
+            source: root.item.art;
+            image-fit: cover;
+        }
+    }
+
+    VerticalLayout {
+        x: 60px;
+        width: root.width - 60px - 44px;
+        alignment: center;
+        spacing: 2px;
+
+        Text {
+            text: root.item.title;
+            color: Theme.text;
+            font-size: 14px;
+            overflow: elide;
+        }
+
+        HorizontalLayout {
+            spacing: 5px;
+            alignment: start;
+
+            if root.item.kind == "liked": Icon {
+                y: 1px;
+                d: Icons.pin;
+                filled: true;
+                size: 11px;
+                color: Theme.accent;
+            }
+
+            Text {
+                text: root.item.subtitle;
+                color: Theme.text-dim;
+                font-size: 12px;
+                overflow: elide;
+            }
+        }
+    }
+
+    Toggle {
+        x: root.width - 32px;
+        checked: root.item.checked;
+        hovered: ta.has-hover;
+    }
+}
+
+component SectionLabel inherits Text {
+    color: Theme.text-dim;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+export component PickerOverlay inherits Rectangle {
+    in property <length> anchor-x: 16px;
+    in property <length> anchor-bottom: 80px;
+
+    TouchArea {
+        clicked => { Picker.cancel(); }
+    }
+
+    panel := Rectangle {
+        x: root.anchor-x;
+        y: root.height - root.anchor-bottom - self.height - (Picker.open ? 6px : 0px);
+        width: 360px;
+        height: min(500px, root.height - 180px);
+        border-radius: 8px;
+        background: #282828;
+        drop-shadow-blur: 32px;
+        drop-shadow-offset-y: 12px;
+        drop-shadow-color: #000000b3;
+        clip: true;
+        animate y { duration: 220ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+        TouchArea { }
+
+        VerticalLayout {
+            padding: 4px;
+            spacing: 4px;
+
+            Text {
+                x: 12px;
+                height: 40px;
+                vertical-alignment: center;
+                text: "Add to playlist";
+                color: Theme.text;
+                font-size: 14px;
+                font-weight: 700;
+            }
+
+            Rectangle {
+                height: 36px;
+                border-radius: 4px;
+                background: input.has-focus ? #4a4a4a : #3e3e3e;
+                border-width: input.has-focus ? 1px : 0px;
+                border-color: #ffffff4d;
+                animate background { duration: Theme.fast; }
+
+                Icon {
+                    x: 10px;
+                    d: Icons.search;
+                    size: 16px;
+                    color: Theme.text-dim;
+                }
+
+                if input.text == "": Text {
+                    x: 36px;
+                    text: "Find a playlist";
+                    color: Theme.text-dim;
+                    font-size: 14px;
+                }
+
+                input := TextInput {
+                    x: 36px;
+                    width: parent.width - 48px;
+                    height: parent.height;
+                    vertical-alignment: center;
+                    color: Theme.text;
+                    font-size: 14px;
+                    single-line: true;
+                    edited => { Picker.search(self.text); }
+                }
+            }
+
+            Rectangle {
+                height: 44px;
+                border-radius: 4px;
+                background: new-ta.has-hover ? #ffffff1a : transparent;
+                animate background { duration: Theme.fast; }
+
+                new-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Picker.create(); }
+                }
+
+                Icon {
+                    x: 16px;
+                    d: Icons.plus;
+                    size: 20px;
+                    color: Theme.text;
+                }
+
+                Text {
+                    x: 48px;
+                    text: "New playlist";
+                    color: Theme.text;
+                    font-size: 14px;
+                    font-weight: 600;
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: #ffffff1a;
+            }
+
+            Scroller {
+                vertical-stretch: 1;
+                content-height: list.preferred-height;
+
+                list := VerticalLayout {
+                    width: parent.width;
+                    padding-top: 8px;
+
+                    if Picker.saved.length > 0: SectionLabel {
+                        x: 12px;
+                        height: 28px;
+                        vertical-alignment: center;
+                        text: "Saved in";
+                    }
+
+                    for item in Picker.saved: PickerRow { item: item; }
+
+                    if Picker.others.length > 0: SectionLabel {
+                        x: 12px;
+                        height: 28px;
+                        vertical-alignment: center;
+                        text: "Your playlists";
+                    }
+
+                    for item in Picker.others: PickerRow { item: item; }
+                }
+            }
+
+            HorizontalLayout {
+                height: 52px;
+                padding-right: 12px;
+                spacing: 8px;
+                alignment: end;
+
+                Rectangle {
+                    y: 10px;
+                    height: 32px;
+                    width: cancel.preferred-width + 24px;
+                    border-radius: 16px;
+                    transform-scale: cancel-ta.pressed ? 0.95 : cancel-ta.has-hover ? 1.04 : 1;
+                    animate transform-scale { duration: 140ms; easing: ease-out; }
+
+                    cancel-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Picker.cancel(); }
+                    }
+
+                    cancel := Text {
+                        text: "Cancel";
+                        color: cancel-ta.has-hover ? Theme.text : Theme.text-dim;
+                        font-size: 14px;
+                        font-weight: 700;
+                    }
+                }
+
+                Rectangle {
+                    y: 10px;
+                    height: 32px;
+                    width: done.preferred-width + 32px;
+                    border-radius: 16px;
+                    background: Theme.text;
+                    opacity: Picker.dirty ? 1 : 0.5;
+                    transform-scale: !Picker.dirty ? 1 : done-ta.pressed ? 0.95 : done-ta.has-hover ? 1.04 : 1;
+                    animate opacity { duration: Theme.fast; }
+                    animate transform-scale { duration: 140ms; easing: ease-out; }
+
+                    done-ta := TouchArea {
+                        enabled: Picker.dirty;
+                        mouse-cursor: Picker.dirty ? pointer : default;
+                        clicked => { Picker.done(); }
+                    }
+
+                    done := Text {
+                        text: "Done";
+                        color: Theme.base;
+                        font-size: 14px;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+    }
+}

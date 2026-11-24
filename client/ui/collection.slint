@@ -1,0 +1,894 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { IconButton, PlayFab, LikedArt, EqBars, Scroller, InlineSearch, Bleed, PillButton } from "components.slint";
+import { Shelf } from "home.slint";
+import { Store, Player, Menu, TrackData } from "store.slint";
+
+component ExplicitBadge inherits Rectangle {
+    width: 16px;
+    height: 16px;
+    border-radius: 2px;
+    background: #ffffff99;
+
+    Text {
+        text: "E";
+        color: Theme.base;
+        font-size: 10px;
+        font-weight: 700;
+    }
+}
+
+component Columns {
+    in property <length> total;
+    in property <bool> album;
+    in property <bool> third;
+    in property <bool> indexed: true;
+    out property <length> index-x: 16px;
+    out property <length> title-x: root.indexed ? 60px : 8px;
+    out property <length> duration-w: 128px;
+    property <length> flexible: root.total - root.title-x - root.duration-w - 16px;
+    property <float> parts: 4 + (root.album ? 3 : 0) + (root.third ? 2 : 0);
+    out property <length> title-w: root.flexible * 4 / root.parts;
+    out property <length> album-x: root.title-x + root.title-w + 16px;
+    out property <length> album-w: root.album ? root.flexible * 3 / root.parts - 16px : 0px;
+    out property <length> third-x: root.album-x + root.album-w + (root.album ? 16px : 0px);
+    out property <length> third-w: root.third ? root.flexible * 2 / root.parts - 16px : 0px;
+    out property <length> duration-x: root.total - root.duration-w;
+    out property <length> check-x: root.duration-x + 8px;
+    out property <length> time-x: root.duration-x + 32px;
+    out property <length> time-w: root.duration-w - 32px - 44px;
+    out property <length> dots-x: root.total - 40px;
+}
+
+export component TrackRow inherits Rectangle {
+    in property <TrackData> data;
+    in property <bool> show-art;
+    in property <bool> show-album;
+    in property <bool> show-third;
+    in property <bool> added-by;
+    in property <bool> liked-row: false;
+    in property <bool> show-index: true;
+    callback play();
+    property <bool> current: Player.track-uri != "" && Player.track-uri == root.data.uri;
+    property <bool> menu-open: Menu.open && Menu.track-id == root.data.id;
+    property <bool> lit: ta.has-hover || root.menu-open;
+
+    height: 52px;
+    border-radius: 4px;
+    background: ta.pressed ? #ffffff26 : root.lit ? #ffffff1a : transparent;
+    animate background { duration: Theme.fast; }
+
+    cols := Columns {
+        total: root.width;
+        album: root.show-album;
+        third: root.show-third;
+        indexed: root.show-index;
+    }
+
+    ta := TouchArea {
+        double-clicked => { root.play(); }
+        pointer-event(ev) => {
+            if ev.button == PointerEventButton.right && ev.kind == PointerEventKind.down {
+                Store.track-menu(root.data, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
+
+        if root.show-index: Rectangle {
+            x: cols.index-x;
+            width: 32px;
+
+            if !root.lit && !(root.current && Player.playing): Text {
+                width: 100%;
+                horizontal-alignment: center;
+                text: root.data.index;
+                color: root.current ? Theme.accent : Theme.text-dim;
+                font-size: 16px;
+            }
+
+            if !root.lit && root.current && Player.playing: EqBars {
+                playing: true;
+            }
+
+            if root.lit: IconButton {
+                icon: root.current && Player.playing ? Icons.pause : Icons.play;
+                filled: true;
+                icon-size: 16px;
+                idle-color: Theme.text;
+                clicked => {
+                    if root.current {
+                        Player.toggle();
+                    } else {
+                        root.play();
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            x: cols.title-x;
+            width: cols.title-w;
+            spacing: 12px;
+
+            if root.show-art: Rectangle {
+                y: 8px;
+                width: 36px;
+                height: 36px;
+                border-radius: 4px;
+                background: Theme.surface-high;
+                clip: true;
+
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: root.data.art;
+                    image-fit: cover;
+                    opacity: root.data.art.width > 0 ? 1 : 0;
+                    animate opacity { duration: 220ms; }
+                }
+
+                if !root.show-index: Rectangle {
+                    background: #00000080;
+                    opacity: root.lit ? 1 : 0;
+                    animate opacity { duration: Theme.fast; }
+
+                    Icon {
+                        d: root.current && Player.playing ? Icons.pause : Icons.play;
+                        filled: true;
+                        size: 16px;
+                        color: Theme.text;
+                    }
+
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            if root.current {
+                                Player.toggle();
+                            } else {
+                                root.play();
+                            }
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+
+                Text {
+                    text: root.data.title;
+                    color: root.current ? Theme.accent : Theme.text;
+                    font-size: 15px;
+                    overflow: elide;
+                }
+
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+
+                    if root.data.explicit: ExplicitBadge { y: 1px; }
+
+                    Text {
+                        text: root.data.artists;
+                        color: root.lit ? Theme.text : Theme.text-dim;
+                        font-size: 13px;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+
+        if root.show-album: Text {
+            x: cols.album-x;
+            width: cols.album-w;
+            vertical-alignment: center;
+            text: root.data.album;
+            color: root.lit ? Theme.text : Theme.text-dim;
+            font-size: 14px;
+            overflow: elide;
+        }
+
+        if root.show-third: Text {
+            x: cols.third-x;
+            width: cols.third-w;
+            vertical-alignment: center;
+            text: root.data.added;
+            color: root.added-by && root.lit ? Theme.text : Theme.text-dim;
+            font-size: 14px;
+            overflow: elide;
+        }
+
+        if root.liked-row && root.lit: Rectangle {
+            x: cols.check-x;
+            width: 16px;
+            height: 16px;
+            border-radius: 8px;
+            background: Theme.accent;
+
+            Icon {
+                d: Icons.check;
+                size: 11px;
+                weight: 2px;
+                color: Theme.base;
+            }
+        }
+
+        Text {
+            x: cols.time-x;
+            width: cols.time-w;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            text: root.data.duration;
+            color: Theme.text-dim;
+            font-size: 14px;
+        }
+
+        IconButton {
+            x: cols.dots-x;
+            icon: Icons.dots;
+            filled: true;
+            icon-size: 16px;
+            idle-color: Theme.text;
+            opacity: root.lit ? 1 : 0;
+            clicked => { Store.track-menu(root.data, self.absolute-position.x - 258px, self.absolute-position.y + 34px); }
+        }
+    }
+}
+
+component FindRow inherits Rectangle {
+    in property <TrackData> data;
+    callback add();
+
+    height: 56px;
+    border-radius: 4px;
+    background: ta.has-hover ? Theme.hover : transparent;
+
+    ta := TouchArea { }
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+
+        Rectangle {
+            y: 8px;
+            width: 40px;
+            height: 40px;
+            border-radius: 4px;
+            background: Theme.surface-high;
+            clip: true;
+
+            Image {
+                width: 100%;
+                height: 100%;
+                source: root.data.art;
+                image-fit: cover;
+                opacity: root.data.art.width > 0 ? 1 : 0;
+                animate opacity { duration: 220ms; }
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                text: root.data.title;
+                color: Theme.text;
+                font-size: 16px;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.data.artists;
+                color: Theme.text-dim;
+                font-size: 14px;
+                overflow: elide;
+            }
+        }
+
+        Text {
+            width: root.width > 560px ? root.width * 0.3 : 0px;
+            vertical-alignment: center;
+            text: root.data.album;
+            color: Theme.text-dim;
+            font-size: 14px;
+            overflow: elide;
+        }
+
+        Rectangle {
+            y: 12px;
+            width: add-label.preferred-width + 32px;
+            height: 32px;
+            border-radius: 16px;
+            border-width: 1px;
+            border-color: add-ta.has-hover ? Theme.text : #ffffff80;
+            transform-scale: add-ta.pressed ? 0.96 : add-ta.has-hover ? 1.04 : 1;
+            animate border-color, transform-scale { duration: Theme.fast; }
+
+            add-label := Text {
+                text: "Add";
+                color: Theme.text;
+                font-size: 14px;
+                font-weight: 700;
+            }
+
+            add-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.add(); }
+            }
+        }
+    }
+}
+
+component ColumnHeader inherits Rectangle {
+    in property <bool> show-album;
+    in property <bool> show-third;
+    in property <bool> added-by;
+
+    height: 36px;
+
+    cols := Columns {
+        total: root.width;
+        album: root.show-album;
+        third: root.show-third;
+    }
+
+    Text { x: cols.index-x; width: 32px; horizontal-alignment: center; text: "#"; color: Theme.text-dim; font-size: 16px; }
+    Text { x: cols.title-x; text: "Title"; color: Theme.text-dim; font-size: 14px; }
+    if root.show-album: Text { x: cols.album-x; text: "Album"; color: Theme.text-dim; font-size: 14px; }
+    if root.show-third: Text { x: cols.third-x; text: root.added-by ? "Added by" : "Date added"; color: Theme.text-dim; font-size: 14px; }
+
+    Icon {
+        x: cols.time-x + cols.time-w - self.width;
+        d: Icons.clock;
+        size: 16px;
+        color: Theme.text-dim;
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: #ffffff1a;
+    }
+}
+
+export component CollectionPage inherits Rectangle {
+    max-width: 100000px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    property <bool> playing-this: Player.context-uri != "" && Player.context-uri == Store.collection.uri;
+    property <length> pad: 24px;
+    property <length> art-size: max(128px, min(232px, root.width * 0.24));
+    property <length> header-height: root.art-size + 88px;
+    property <length> list-width: root.width - 2 * root.pad;
+    property <bool> show-album: Store.collection.show-album && root.list-width > 460px;
+    property <bool> show-third: (Store.collection.show-added || Store.collection.show-added-by) && root.list-width > 600px;
+    property <float> chars: max(4, Store.collection.title.character-count);
+    property <length> title-size: max(32px, min(96px, (root.width - root.art-size - 3 * root.pad) / root.chars * 1.6));
+    property <length> scroll: scroller.offset;
+    property <length> list-top: root.header-height + 104px;
+    property <bool> find-open;
+    property <bool> editable: Store.collection.kind == "playlist" && Store.collection.owner-is-me;
+    property <string> page-id: Store.collection.id;
+
+    changed page-id => { root.find-open = false; }
+
+    changed scroll => {
+        if root.scroll > scroller.content-height - root.height - 900px {
+            Store.load-more();
+        }
+    }
+
+    scroller := Scroller {
+        content-height: page.preferred-height;
+
+        page := VerticalLayout {
+            width: parent.width;
+
+            Rectangle {
+                height: root.header-height + 104px;
+
+                Rectangle {
+                    y: 0;
+                    height: root.header-height;
+                    background: @linear-gradient(180deg, Store.collection-color 0%, Store.collection-color.darker(0.45) 100%);
+                    animate background { duration: 360ms; }
+                }
+
+                Rectangle {
+                    y: root.header-height;
+                    height: 232px;
+                    background: @linear-gradient(180deg, Store.collection-color.darker(0.62) 0%, Theme.surface 100%);
+                    animate background { duration: 360ms; }
+                }
+
+                HorizontalLayout {
+                    x: root.pad;
+                    y: 64px;
+                    width: root.width - 2 * root.pad;
+                    height: root.art-size;
+                    spacing: 24px;
+
+                    Rectangle {
+                        width: root.art-size;
+                        border-radius: 4px;
+                        background: Theme.surface-high;
+                        clip: true;
+                        drop-shadow-blur: 40px;
+                        drop-shadow-offset-y: 8px;
+                        drop-shadow-color: #00000080;
+
+                        if Store.collection.kind == "collection": LikedArt {
+                            width: 100%;
+                            height: 100%;
+                            icon-size: root.art-size * 0.36;
+                        }
+
+                        if Store.collection.kind != "collection" && Store.collection.image-url == "": Icon {
+                            d: Icons.note;
+                            size: root.art-size * 0.36;
+                            color: Theme.text-faint;
+                        }
+
+                        Image {
+                            width: 100%;
+                            height: 100%;
+                            source: Store.collection.art;
+                            image-fit: cover;
+                            opacity: Store.collection.art.width > 0 ? 1 : 0;
+                            animate opacity { duration: 300ms; }
+                        }
+
+                        if root.editable: Rectangle {
+                            background: #000000b3;
+                            opacity: cover-ta.has-hover ? 1 : 0;
+                            animate opacity { duration: Theme.fast; }
+
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 8px;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Icon { d: Icons.edit; size: root.art-size * 0.22; color: Theme.text; }
+                                }
+                                Text { horizontal-alignment: center; text: "Edit details"; color: Theme.text; font-size: 15px; font-weight: 700; }
+                            }
+
+                            cover-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Store.edit-collection(); }
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: end;
+                        spacing: 8px;
+
+                        Text {
+                            text: Store.collection.label;
+                            color: Theme.text;
+                            font-size: 14px;
+                            font-weight: 600;
+                        }
+
+                        Text {
+                            text: Store.collection.title;
+                            color: Theme.text;
+                            font-size: root.title-size;
+                            font-weight: 800;
+                            letter-spacing: -root.title-size * 0.04;
+                            overflow: elide;
+
+                            if root.editable: TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Store.edit-collection(); }
+                            }
+                        }
+
+                        if Store.collection.description != "": Text {
+                            text: Store.collection.description;
+                            color: #ffffffb3;
+                            font-size: 14px;
+                            overflow: elide;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            alignment: start;
+                            height: 24px;
+
+                            Rectangle {
+                                width: 24px;
+                                border-radius: 12px;
+                                background: #ffffff26;
+                                clip: true;
+
+                                if !Store.collection.owner-is-me && Store.collection.owner-art.width == 0: Icon {
+                                    d: Icons.person;
+                                    size: 14px;
+                                    color: Theme.text;
+                                }
+
+                                Image {
+                                    width: 100%;
+                                    height: 100%;
+                                    source: Store.collection.owner-is-me ? Store.user-art : Store.collection.owner-art;
+                                    image-fit: cover;
+                                }
+                            }
+
+                            Text {
+                                vertical-alignment: center;
+                                text: Store.collection.owner;
+                                color: Theme.text;
+                                font-size: 14px;
+                                font-weight: 700;
+
+                                owner-ta := TouchArea {
+                                    mouse-cursor: Store.collection.owner-id != "" ? MouseCursor.pointer : MouseCursor.default;
+                                    clicked => {
+                                        if Store.collection.owner-id != "" {
+                                            Store.open-artist(Store.collection.owner-id);
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                vertical-alignment: center;
+                                text: Store.collection.meta == "" ? "" : "•  \{Store.collection.meta}";
+                                color: #ffffffb3;
+                                font-size: 14px;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    x: root.pad;
+                    y: root.header-height + 24px;
+                    width: root.width - 2 * root.pad;
+                    height: 56px;
+                    spacing: 24px;
+
+                    PlayFab {
+                        size: 56px;
+                        playing: root.playing-this && Player.playing;
+                        clicked => { Store.play-collection(); }
+                    }
+
+                    IconButton {
+                        y: 4px;
+                        width: 48px;
+                        height: 48px;
+                        icon: Icons.shuffle;
+                        icon-size: 30px;
+                        dot: true;
+                        active: Player.shuffle;
+                        clicked => { Player.toggle-shuffle(); }
+                    }
+
+                    IconButton {
+                        y: 4px;
+                        width: 48px;
+                        height: 48px;
+                        icon: Icons.dots;
+                        filled: true;
+                        icon-size: 28px;
+                        clicked => {
+                            Store.card-menu({
+                                id: Store.collection.id,
+                                uri: Store.collection.uri,
+                                kind: Store.collection.kind,
+                                title: Store.collection.title,
+                                image-url: Store.collection.image-url,
+                                art: Store.collection.art,
+                            }, self.absolute-position.x, self.absolute-position.y + self.height);
+                        }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    if root.list-width > 440px: InlineSearch {
+                        y: 12px;
+                        placeholder: Store.collection.kind == "album" ? "Search in album" : "Search in playlist";
+                        full-width: 200px;
+                        text <=> Store.collection-query;
+                        edited(q) => { Store.collection-filter(q); }
+                    }
+
+                    if Store.collection.kind != "album" && root.list-width > 360px: Rectangle {
+                        y: 12px;
+                        height: 32px;
+                        width: sort-label.preferred-width + 40px;
+                        border-radius: 16px;
+                        background: sort-ta.has-hover ? Theme.hover : transparent;
+                        animate background { duration: Theme.fast; }
+
+                        sort-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Store.collection-sort-menu(self.absolute-position.x + self.width - 180px, self.absolute-position.y + self.height + 4px); }
+                        }
+
+                        sort-label := Text {
+                            x: 8px;
+                            text: Store.collection-sort;
+                            color: sort-ta.has-hover ? Theme.text : Theme.text-dim;
+                            font-size: 14px;
+                        }
+
+                        Icon {
+                            x: parent.width - 26px;
+                            d: Icons.sort;
+                            size: 18px;
+                            color: sort-ta.has-hover ? Theme.text : Theme.text-dim;
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                padding-left: root.pad;
+                padding-right: root.pad;
+                padding-bottom: 32px;
+
+                if root.editable: HorizontalLayout {
+                    alignment: start;
+                    spacing: 8px;
+                    padding-bottom: 16px;
+                    PillButton {
+                        icon: Icons.plus;
+                        text: "Add";
+                        clicked => { root.find-open = true; }
+                    }
+                    PillButton {
+                        icon: Icons.edit;
+                        text: "Name & details";
+                        clicked => { Store.edit-collection(); }
+                    }
+                }
+
+                if Store.tracks.length > 0 || Store.collection-loading: ColumnHeader {
+                    show-album: root.show-album;
+                    show-third: root.show-third;
+                    added-by: Store.collection.show-added-by;
+                }
+
+                if Store.tracks.length > 0 || Store.collection-loading: Rectangle { height: 16px; }
+
+                if Store.collection-loading && Store.tracks.length == 0: VerticalLayout {
+                    spacing: 8px;
+                    for _ in 8: Rectangle {
+                        height: 48px;
+                        border-radius: 4px;
+                        background: Theme.tile;
+                        opacity: 0.5;
+                    }
+                }
+
+                if Store.collection-error && !Store.collection-loading && Store.tracks.length == 0: VerticalLayout {
+                    padding-top: 40px;
+                    spacing: 16px;
+                    alignment: start;
+
+                    Text {
+                        horizontal-alignment: center;
+                        text: "Couldn't load this right now";
+                        color: Theme.text;
+                        font-size: 20px;
+                        font-weight: 800;
+                    }
+
+                    Text {
+                        horizontal-alignment: center;
+                        text: "Spotify is slow to respond. Give it another try.";
+                        color: Theme.text-dim;
+                        font-size: 14px;
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        PillButton {
+                            text: "Try again";
+                            outline: true;
+                            clicked => { Store.retry-collection(); }
+                        }
+                    }
+                }
+
+                for track in Store.tracks: TrackRow {
+                    data: track;
+                    liked-row: Store.collection.kind == "collection";
+                    play => { Store.play-track(track); }
+                    show-art: Store.collection.show-art;
+                    show-album: root.show-album;
+                    show-third: root.show-third;
+                    added-by: Store.collection.show-added-by;
+                }
+
+                if Store.collection.kind == "album" && Store.collection-footer.length > 0 && Store.collection-query == "": VerticalLayout {
+                    padding-top: 32px;
+                    spacing: 2px;
+
+                    for line[i] in Store.collection-footer: Text {
+                        text: line;
+                        color: Theme.text-dim;
+                        font-size: i == 0 ? 14px : 11px;
+                        wrap: word-wrap;
+                    }
+                }
+
+                if Store.collection.kind == "album" && Store.collection-more.items.length > 0: VerticalLayout {
+                    padding-top: 40px;
+
+                    Bleed {
+                        Shelf { section: Store.collection-more; }
+                    }
+                }
+
+                if Store.collection.kind == "playlist" && Store.collection.owner-is-me && !Store.collection-loading && Store.tracks.length > 0 && !root.find-open: HorizontalLayout {
+                    padding-top: 24px;
+                    alignment: end;
+
+                    Text {
+                        text: "Find more";
+                        color: more-ta.has-hover ? Theme.text : Theme.text-dim;
+                        font-size: 14px;
+                        font-weight: 700;
+                        animate color { duration: Theme.fast; }
+
+                        more-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.find-open = true; }
+                        }
+                    }
+                }
+
+                if Store.collection.kind == "playlist" && Store.collection.owner-is-me && !Store.collection-loading && (Store.tracks.length == 0 || root.find-open): VerticalLayout {
+                    padding-top: 24px;
+                    spacing: 16px;
+
+                    Rectangle {
+                        height: 1px;
+                        background: #ffffff1a;
+                    }
+
+                    HorizontalLayout {
+                        Text {
+                            horizontal-stretch: 1;
+                            text: "Let's find something for your playlist";
+                            color: Theme.text;
+                            font-size: 24px;
+                            font-weight: 800;
+                            letter-spacing: -0.6px;
+                            overflow: elide;
+                        }
+
+                        if Store.tracks.length > 0: Rectangle {
+                            width: 32px;
+                            height: 32px;
+                            border-radius: 16px;
+                            background: close-find.has-hover ? Theme.hover : transparent;
+
+                            close-find := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.find-open = false; }
+                            }
+
+                            Icon { d: Icons.close; size: 18px; color: Theme.text; }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: start;
+                        height: 40px;
+
+                        Rectangle {
+                            width: min(360px, root.list-width);
+                            border-radius: 4px;
+                            background: #ffffff1a;
+                            border-width: 1px;
+                            border-color: find-input.has-focus ? #ffffff4d : transparent;
+                            animate border-color { duration: Theme.fast; }
+
+                            TouchArea {
+                                mouse-cursor: MouseCursor.text;
+                                clicked => { find-input.focus(); }
+                            }
+
+                            Icon {
+                                x: 12px;
+                                d: Icons.search;
+                                size: 16px;
+                                color: Theme.text-dim;
+                            }
+
+                            find-input := TextInput {
+                                x: 40px;
+                                width: parent.width - 52px;
+                                height: parent.height;
+                                vertical-alignment: center;
+                                single-line: true;
+                                text <=> Store.find-query;
+                                color: Theme.text;
+                                font-size: 14px;
+                                edited => { Store.find-search(self.text); }
+                            }
+
+                            if Store.find-query == "": Text {
+                                x: 40px;
+                                text: "Search for songs";
+                                color: Theme.text-dim;
+                                font-size: 14px;
+                            }
+                        }
+                    }
+
+                    if Store.find-loading && Store.find-results.length == 0: Text {
+                        text: "Searching…";
+                        color: Theme.text-dim;
+                        font-size: 14px;
+                    }
+
+                    VerticalLayout {
+                        for track in Store.find-results: FindRow {
+                            data: track;
+                            add => { Store.find-add(track); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        y: 0;
+        height: 64px;
+        background: Store.collection-color.darker(0.25);
+        opacity: max(0, min(1, (root.scroll - root.header-height + 72px) / 40px));
+
+        HorizontalLayout {
+            x: root.pad;
+            spacing: 12px;
+            alignment: start;
+
+            PlayFab {
+                y: 12px;
+                size: 40px;
+                playing: root.playing-this && Player.playing;
+                clicked => { Store.play-collection(); }
+            }
+
+            Text {
+                vertical-alignment: center;
+                text: Store.collection.title;
+                color: Theme.text;
+                font-size: 24px;
+                font-weight: 800;
+                letter-spacing: -0.6px;
+                overflow: elide;
+            }
+        }
+    }
+
+    Rectangle {
+        y: 64px;
+        height: 36px;
+        visible: root.scroll > root.list-top - 64px && Store.tracks.length > 0;
+        background: Theme.surface-raised;
+
+        ColumnHeader {
+            x: root.pad;
+            width: root.list-width;
+            show-album: root.show-album;
+            show-third: root.show-third;
+            added-by: Store.collection.show-added-by;
+        }
+    }
+}

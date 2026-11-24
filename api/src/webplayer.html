@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Rustify</title>
+</head>
+<body>
+<script>
+const params = new URLSearchParams(location.search);
+const send = msg => window.ipc.postMessage(JSON.stringify(msg));
+const waiters = [];
+let player = null;
+
+function push(s) {
+  if (!s) {
+    send({ type: "state", state: null });
+    return;
+  }
+  const t = s.track_window && s.track_window.current_track;
+  describe(s, t);
+  send({
+    type: "state",
+    state: {
+      paused: s.paused,
+      position: s.position,
+      shuffle: s.shuffle,
+      repeat: s.repeat_mode,
+      context: s.context && s.context.uri,
+      track: t && {
+        id: t.id,
+        uri: t.uri,
+        name: t.name,
+        duration: t.duration_ms,
+        artists: (t.artists || []).map(a => ({ name: a.name, uri: a.uri })),
+        album: t.album && { name: t.album.name, uri: t.album.uri, images: t.album.images || [] },
+      },
+    },
+  });
+}
+
+function describe(s, t) {
+  if (!("mediaSession" in navigator)) return;
+  try {
+    if (t) {
+      const images = ((t.album && t.album.images) || []).filter(i => i && i.url);
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: t.name || "",
+        artist: (t.artists || []).map(a => a.name).join(", "),
+        album: (t.album && t.album.name) || "",
+        artwork: images.map(i => ({ src: i.url })),
+      });
+      document.title = `${t.name} • ${(t.artists || []).map(a => a.name).join(", ")}`;
+    }
+    navigator.mediaSession.playbackState = s.paused ? "paused" : "playing";
+  } catch (e) {
+    send({ type: "error", kind: "media_session", message: String(e) });
+  }
+}
+
+function bindMediaKeys() {
+  if (!("mediaSession" in navigator)) return;
+  const actions = {
+    play: () => player.resume(),
+    pause: () => player.pause(),
+    nexttrack: () => player.nextTrack(),
+    previoustrack: () => player.previousTrack(),
+    seekto: d => player.seek(Math.round(d.seekTime * 1000)),
+  };
+  for (const [action, run] of Object.entries(actions)) {
+    try {
+      navigator.mediaSession.setActionHandler(action, d => player && Promise.resolve(run(d)).catch(() => {}));
+    } catch (_) {}
+  }
+}
+
+window.rustify = {
+  token(t) {
+    waiters.splice(0).forEach(cb => cb(t));
+  },
+  call(method, ...args) {
+    if (!player) return;
+    Promise.resolve(player[method](...args)).catch(e => send({ type: "error", kind: "call", message: String(e) }));
+  },
+};
+
+window.onSpotifyWebPlaybackSDKReady = () => {
+  player = new Spotify.Player({
+    name: params.get("name") || "Rustify",
+    getOAuthToken: cb => {
+      waiters.push(cb);
+      send({ type: "token" });
+    },
+    volume: Number(params.get("volume") || 0.7),
+  });
+
+  for (const kind of ["initialization_error", "authentication_error", "account_error", "playback_error"]) {
+    player.addListener(kind, e => send({ type: "error", kind, message: e && e.message }));
+  }
+  player.addListener("autoplay_failed", () => send({ type: "error", kind: "autoplay_failed", message: "autoplay blocked" }));
+  player.addListener("ready", ({ device_id }) => send({ type: "ready", device_id }));
+  player.addListener("not_ready", ({ device_id }) => send({ type: "not_ready", device_id }));
+  player.addListener("player_state_changed", push);
+  bindMediaKeys();
+
+  setInterval(async () => {
+    const s = await player.getCurrentState();
+    if (s && !s.paused) push(s);
+  }, 5000);
+
+  player.connect().then(ok => {
+    if (!ok) send({ type: "error", kind: "connect", message: "could not connect the player" });
+  });
+};
+</script>
+<script src="https://sdk.scdn.co/spotify-player.js"></script>
+</body>
+</html>

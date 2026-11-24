@@ -1,0 +1,477 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { IconButton, Scroller, EqBars } from "components.slint";
+import { Store, Player, Shell, Panels, TrackData, DeviceData, FriendData } from "store.slint";
+
+component PanelHeader inherits HorizontalLayout {
+    in property <string> title;
+
+    height: 56px;
+    padding-left: 16px;
+    padding-right: 8px;
+    spacing: 4px;
+
+    Text {
+        horizontal-stretch: 1;
+        vertical-alignment: center;
+        text: root.title;
+        color: Theme.text;
+        font-size: 16px;
+        font-weight: 700;
+        overflow: elide;
+    }
+
+    IconButton {
+        y: 12px;
+        icon: Icons.close;
+        ghost: true;
+        clicked => { Shell.right-panel = ""; }
+    }
+}
+
+component Tab inherits Rectangle {
+    in property <string> text;
+    in property <bool> active;
+    callback clicked();
+
+    width: label.preferred-width + 8px;
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    label := Text {
+        text: root.text;
+        color: root.active || ta.has-hover ? Theme.text : Theme.text-dim;
+        font-size: 15px;
+        font-weight: 700;
+        animate color { duration: Theme.fast; }
+    }
+
+    Rectangle {
+        y: parent.height - 8px;
+        x: 4px;
+        width: parent.width - 8px;
+        height: 2px;
+        background: Theme.accent;
+        opacity: root.active ? 1 : 0;
+        animate opacity { duration: Theme.fast; }
+    }
+}
+
+component QueueRow inherits Rectangle {
+    in property <TrackData> data;
+    in property <bool> now: false;
+    callback play();
+
+    property <bool> current: Player.track-uri != "" && Player.track-uri == root.data.uri;
+
+    height: 58px;
+    border-radius: 4px;
+    background: ta.pressed ? #ffffff1f : ta.has-hover ? #ffffff12 : transparent;
+    animate background { duration: Theme.fast; }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        double-clicked => { root.play(); }
+        pointer-event(ev) => {
+            if ev.button == PointerEventButton.right && ev.kind == PointerEventKind.down {
+                Store.track-menu(root.data, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
+    }
+
+    Rectangle {
+        x: 8px;
+        width: 44px;
+        height: 44px;
+        border-radius: 4px;
+        background: Theme.surface-high;
+        clip: true;
+
+        Image {
+            width: 100%;
+            height: 100%;
+            source: root.data.art;
+            image-fit: cover;
+            opacity: root.data.art.width > 0 ? 1 : 0;
+            animate opacity { duration: 200ms; }
+        }
+
+        Rectangle {
+            background: #00000080;
+            opacity: ta.has-hover ? 1 : 0;
+            animate opacity { duration: Theme.fast; }
+
+            Icon {
+                d: root.current && Player.playing ? Icons.pause : Icons.play;
+                filled: true;
+                size: 16px;
+                color: Theme.text;
+            }
+
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    if root.current {
+                        Player.toggle();
+                    } else {
+                        root.play();
+                    }
+                }
+            }
+        }
+    }
+
+    VerticalLayout {
+        x: 64px;
+        width: root.width - 64px - (root.now && Player.playing ? 32px : 8px);
+        alignment: center;
+        spacing: 2px;
+
+        Text {
+            text: root.data.title;
+            color: root.current ? Theme.accent : Theme.text;
+            font-size: 15px;
+            overflow: elide;
+        }
+
+        Text {
+            text: root.data.artists;
+            color: Theme.text-dim;
+            font-size: 13px;
+            overflow: elide;
+        }
+    }
+
+    if root.now && root.current && Player.playing: EqBars {
+        x: root.width - 28px;
+        playing: true;
+    }
+}
+
+component Heading inherits Text {
+    color: Theme.text;
+    font-size: 15px;
+    font-weight: 700;
+    overflow: elide;
+}
+
+component Hint inherits Text {
+    color: Theme.text-dim;
+    font-size: 14px;
+    wrap: word-wrap;
+    horizontal-alignment: center;
+}
+
+export component QueuePanel inherits Rectangle {
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    VerticalLayout {
+        HorizontalLayout {
+            height: 56px;
+            padding-left: 12px;
+            padding-right: 8px;
+            spacing: 16px;
+
+            Tab {
+                text: "Queue";
+                active: Panels.queue-tab == "queue";
+                clicked => { Panels.queue-tab-picked("queue"); }
+            }
+
+            Tab {
+                text: "Recently played";
+                active: Panels.queue-tab == "recent";
+                clicked => { Panels.queue-tab-picked("recent"); }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            IconButton {
+                y: 12px;
+                icon: Icons.close;
+                ghost: true;
+                clicked => { Shell.right-panel = ""; }
+            }
+        }
+
+        Scroller {
+            vertical-stretch: 1;
+            content-height: list.preferred-height;
+
+            list := VerticalLayout {
+                width: parent.width;
+                padding-left: 8px;
+                padding-right: 8px;
+                padding-bottom: 16px;
+                spacing: 4px;
+
+                if Panels.queue-tab == "queue" && Panels.has-queue-now: VerticalLayout {
+                    spacing: 4px;
+                    HorizontalLayout { padding-left: 8px; height: 40px; Heading { vertical-alignment: center; text: "Now playing"; } }
+                    QueueRow {
+                        data: Panels.queue-now;
+                        now: true;
+                        play => { Player.toggle(); }
+                    }
+                }
+
+                if Panels.queue-tab == "queue" && Panels.queue.length > 0: HorizontalLayout {
+                    padding-left: 8px;
+                    height: 48px;
+                    Heading {
+                        vertical-alignment: center;
+                        text: Player.context-title != "" ? "Next from: \{Player.context-title}" : "Next up";
+                    }
+                }
+
+                if Panels.queue-tab == "queue": VerticalLayout {
+                    for item[i] in Panels.queue: QueueRow {
+                        data: item;
+                        play => { Panels.play-queue-item(item, i); }
+                    }
+                }
+
+                if Panels.queue-tab == "queue" && !Panels.queue-loading && Panels.queue.length == 0 && !Panels.has-queue-now: VerticalLayout {
+                    padding-top: 80px;
+                    padding-left: 24px;
+                    padding-right: 24px;
+                    spacing: 8px;
+                    Heading { horizontal-alignment: center; text: "Your queue is empty"; }
+                    Hint { text: "Play something, or add songs with \"Add to queue\"."; }
+                }
+
+                if Panels.queue-tab == "recent": VerticalLayout {
+                    padding-top: 8px;
+                    for item[i] in Panels.recent: QueueRow {
+                        data: item;
+                        play => { Panels.play-recent(item, i); }
+                    }
+                }
+
+                if Panels.queue-tab == "recent" && !Panels.queue-loading && Panels.recent.length == 0: VerticalLayout {
+                    padding-top: 80px;
+                    Hint { text: "Nothing played recently."; }
+                }
+            }
+        }
+    }
+}
+
+component DeviceRow inherits Rectangle {
+    in property <DeviceData> data;
+
+    height: 52px;
+    border-radius: 6px;
+    background: ta.pressed ? #ffffff1f : ta.has-hover ? #ffffff12 : transparent;
+    animate background { duration: Theme.fast; }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Panels.transfer(root.data.id); }
+    }
+
+    Icon {
+        x: 16px;
+        d: root.data.kind == "Smartphone" ? Icons.smartphone : root.data.kind == "Speaker" || root.data.kind == "AVR" || root.data.kind == "Automobile" ? Icons.speaker-box : root.data.kind == "TV" || root.data.kind == "STB" || root.data.kind == "CastVideo" ? Icons.tv : root.data.kind == "GameConsole" ? Icons.gamepad : Icons.laptop;
+        size: 22px;
+        color: root.data.active ? Theme.accent : Theme.text;
+    }
+
+    Text {
+        x: 52px;
+        width: root.width - 64px;
+        text: root.data.name;
+        color: root.data.active ? Theme.accent : Theme.text;
+        font-size: 15px;
+        overflow: elide;
+    }
+}
+
+component LinkRow inherits Rectangle {
+    in property <string> text;
+    in property <string> url;
+
+    height: 44px;
+    border-radius: 6px;
+    background: ta.has-hover ? #ffffff12 : transparent;
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Panels.open-url(root.url); }
+    }
+
+    Text {
+        x: 16px;
+        text: root.text;
+        color: Theme.text;
+        font-size: 15px;
+        font-weight: 700;
+    }
+
+    Icon {
+        x: parent.width - 36px;
+        d: Icons.external;
+        size: 16px;
+        color: Theme.text-dim;
+    }
+}
+
+export component DevicesPanel inherits Rectangle {
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    VerticalLayout {
+        PanelHeader { title: "Connect"; }
+
+        Scroller {
+            vertical-stretch: 1;
+            content-height: body.preferred-height;
+
+            body := VerticalLayout {
+                width: parent.width;
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 4px;
+
+                for device in Panels.devices: Rectangle {
+                    height: device.active ? 76px : 52px;
+                    border-radius: 8px;
+                    background: device.active ? #ffffff14 : transparent;
+
+                    if device.active: Rectangle {
+                        Icon {
+                            x: 16px;
+                            y: 16px;
+                            d: Icons.laptop;
+                            size: 24px;
+                            color: Theme.accent;
+                        }
+                        VerticalLayout {
+                            x: 54px;
+                            width: parent.width - 66px;
+                            alignment: center;
+                            spacing: 2px;
+                            Text { text: device.current ? "This computer" : device.name; color: Theme.accent; font-size: 15px; font-weight: 700; overflow: elide; }
+                            Text { text: device.current ? device.name : "Currently playing"; color: Theme.text-dim; font-size: 13px; overflow: elide; }
+                        }
+                    }
+
+                    if !device.active: DeviceRow { data: device; }
+                }
+
+                if !Panels.devices-loading && Panels.devices.length == 0: VerticalLayout {
+                    padding-top: 60px;
+                    Hint { text: "No devices found. Open Spotify on another device signed in to your account."; }
+                }
+
+                if Panels.devices.length > 0 && Panels.devices.length < 2: VerticalLayout {
+                    padding: 16px;
+                    Hint {
+                        horizontal-alignment: left;
+                        text: "Open Spotify on a phone, speaker or TV with the same account and it will appear here.";
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            padding: 8px;
+            LinkRow { text: "Don't see your device?"; url: "https://support.spotify.com/article/spotify-connect/"; }
+        }
+    }
+}
+
+component FriendRow inherits Rectangle {
+    in property <FriendData> data;
+
+    height: 72px;
+
+    Rectangle {
+        x: 16px;
+        y: 12px;
+        width: 40px;
+        height: 40px;
+        border-radius: 20px;
+        background: Theme.surface-high;
+        clip: true;
+
+        Icon { d: Icons.person; size: 18px; color: Theme.text-dim; }
+        Image {
+            width: 100%;
+            height: 100%;
+            source: root.data.art;
+            image-fit: cover;
+        }
+    }
+
+    VerticalLayout {
+        x: 68px;
+        y: 10px;
+        width: root.width - 80px;
+        spacing: 1px;
+
+        HorizontalLayout {
+            Text { horizontal-stretch: 1; text: root.data.name; color: Theme.text; font-size: 14px; font-weight: 700; overflow: elide; }
+            Text { text: root.data.ago; color: Theme.text-dim; font-size: 12px; }
+        }
+        Text { text: "\{root.data.track} • \{root.data.artist}"; color: Theme.text-dim; font-size: 13px; overflow: elide; }
+        Text { text: root.data.context; color: Theme.text-dim; font-size: 13px; overflow: elide; }
+    }
+}
+
+export component FriendsPanel inherits Rectangle {
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    VerticalLayout {
+        PanelHeader { title: "Friend Activity"; }
+
+        if Panels.friends.length > 0: Scroller {
+            vertical-stretch: 1;
+            content-height: rows.preferred-height;
+
+            rows := VerticalLayout {
+                width: parent.width;
+                for friend in Panels.friends: FriendRow { data: friend; }
+            }
+        }
+
+        if Panels.friends.length == 0: VerticalLayout {
+            vertical-stretch: 1;
+            padding: 24px;
+            spacing: 16px;
+            alignment: start;
+
+            Heading {
+                text: "See what your friends are playing";
+                wrap: word-wrap;
+                font-size: 16px;
+            }
+
+            Hint {
+                horizontal-alignment: left;
+                text: Panels.friends-loading ? "Loading…" : "When people you follow share their listening activity on Spotify, it shows up here. Follow friends from their Spotify profile to see their activity.";
+            }
+
+            for _ in 3: HorizontalLayout {
+                height: 48px;
+                spacing: 12px;
+                opacity: 0.35;
+                Rectangle { width: 40px; height: 40px; border-radius: 20px; background: Theme.surface-high; }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    Rectangle { height: 10px; width: 120px; border-radius: 5px; background: Theme.surface-high; }
+                    Rectangle { height: 10px; width: 180px; border-radius: 5px; background: Theme.surface-high; }
+                }
+            }
+        }
+    }
+}

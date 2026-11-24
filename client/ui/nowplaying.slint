@@ -1,0 +1,370 @@
+import { Theme, Fmt } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { IconButton, Scroller, LikeButton, PillButton } from "components.slint";
+import { Store, Player, Shell, Panels } from "store.slint";
+
+export component NowPlayingPanel inherits Rectangle {
+    background: Player.voice ? #0d5bd7 : Theme.surface;
+    animate background { duration: 400ms; easing: ease-out; }
+    border-radius: Theme.radius;
+    clip: true;
+
+    if !Player.has-track: VerticalLayout {
+        alignment: center;
+        spacing: 12px;
+        padding: 24px;
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                d: Icons.note;
+                size: 48px;
+                color: Theme.text-faint;
+            }
+        }
+        Text {
+            horizontal-alignment: center;
+            text: "Nothing playing yet";
+            color: Theme.text;
+            font-size: 16px;
+            font-weight: 700;
+        }
+        Text {
+            horizontal-alignment: center;
+            text: "Pick something from your library or home to start listening.";
+            color: Theme.text-dim;
+            font-size: 13px;
+            wrap: word-wrap;
+        }
+    }
+
+    if Player.has-track && Player.voice: VerticalLayout {
+        padding: 16px;
+        spacing: 16px;
+
+        HorizontalLayout {
+            height: 32px;
+            alignment: end;
+            IconButton { icon: Icons.close; ghost: true; idle-color: #ffffffcc; clicked => { Shell.right-panel = ""; } }
+        }
+
+        Rectangle {
+            height: self.width;
+            Image {
+                width: 100%;
+                height: 100%;
+                source: Player.art-large;
+                image-fit: contain;
+            }
+        }
+
+        VerticalLayout {
+            spacing: 2px;
+            Text {
+                text: Player.title;
+                color: Theme.text;
+                font-size: 24px;
+                font-weight: 800;
+                overflow: elide;
+            }
+            Text {
+                text: Player.artists;
+                color: #ffffffb3;
+                font-size: 15px;
+                overflow: elide;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+
+    if Player.has-track && !Player.voice: Scroller {
+        content-height: body.preferred-height;
+
+        body := VerticalLayout {
+            width: parent.width;
+            padding: 16px;
+            spacing: 16px;
+
+            HorizontalLayout {
+                height: 32px;
+                spacing: 4px;
+                Text {
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    text: Player.dj ? "DJ • Based on recent listening" : Player.context-title != "" ? Player.context-title : Player.title;
+                    color: Theme.text;
+                    font-size: 16px;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+                IconButton {
+                    icon: Icons.dots;
+                    filled: true;
+                    ghost: true;
+                    clicked => {
+                        Store.track-menu({
+                            id: Player.track-id,
+                            uri: Player.track-uri,
+                            title: Player.title,
+                            artists: Player.artists,
+                            art: Player.art,
+                        }, self.absolute-position.x - 250px, self.absolute-position.y + self.height);
+                    }
+                }
+                IconButton { icon: Icons.close; ghost: true; clicked => { Shell.right-panel = ""; } }
+            }
+
+            Rectangle {
+                height: self.width;
+                border-radius: Theme.radius;
+                background: Theme.surface-high;
+                clip: true;
+                drop-shadow-blur: 24px;
+                drop-shadow-color: #00000080;
+
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: Player.art-large;
+                    image-fit: cover;
+                    opacity: Player.art-large.width > 0 ? 1 : 0;
+                    animate opacity { duration: 320ms; easing: ease-out; }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text {
+                        text: Player.title;
+                        color: Theme.text;
+                        font-size: 24px;
+                        font-weight: 800;
+                        letter-spacing: -0.3px;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: Player.artists;
+                        color: Theme.text-dim;
+                        font-size: 15px;
+                        overflow: elide;
+                    }
+                }
+                LikeButton { y: 8px; size: 20px; liked: Player.saved; toggled => { Player.save-pressed(); } }
+            }
+
+            if Store.artist.loaded: Rectangle {
+                border-radius: Theme.radius;
+                background: Theme.surface-raised;
+                clip: true;
+                height: about.preferred-height;
+
+                about := VerticalLayout {
+                    Rectangle {
+                        height: Store.artist.image-url != "" ? parent.width * 0.62 : 56px;
+                        Image {
+                            width: 100%;
+                            height: 100%;
+                            source: Store.artist.art;
+                            image-fit: cover;
+                            opacity: Store.artist.art.width > 0 ? 1 : 0;
+                            animate opacity { duration: 320ms; easing: ease-out; }
+                        }
+                        Rectangle {
+                            background: @linear-gradient(180deg, #00000099 0%, #00000000 40%);
+                        }
+                        Text {
+                            x: 16px;
+                            y: 16px;
+                            text: "About the artist";
+                            color: Theme.text;
+                            font-size: 16px;
+                            font-weight: 700;
+                        }
+                    }
+
+                    VerticalLayout {
+                        padding: 16px;
+                        spacing: 12px;
+
+                        Text {
+                            text: Store.artist.name;
+                            color: Theme.text;
+                            font-size: 16px;
+                            font-weight: 700;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 12px;
+                            Text {
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                                text: Store.artist.followers != "" ? "\{Store.artist.followers} followers" : "";
+                                color: Theme.text-dim;
+                                font-size: 14px;
+                            }
+                            PillButton { outline: true; text: Store.artist.following ? "Following" : "Follow"; clicked => { Store.toggle-follow(Store.artist.id); } }
+                        }
+
+                        if Store.artist.genres != "": Text {
+                            text: Store.artist.genres;
+                            color: Theme.text-dim;
+                            font-size: 13px;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+
+            if Player.track-uri != "": Rectangle {
+                border-radius: Theme.radius;
+                background: Theme.surface-raised;
+                height: credits.preferred-height;
+
+                credits := VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+
+                    HorizontalLayout {
+                        Text {
+                            horizontal-stretch: 1;
+                            text: "Credits";
+                            color: Theme.text;
+                            font-size: 16px;
+                            font-weight: 700;
+                        }
+
+                        Text {
+                            text: "Show all";
+                            color: credits-ta.has-hover ? Theme.text : Theme.text-dim;
+                            font-size: 14px;
+                            font-weight: 700;
+                            animate color { duration: Theme.fast; }
+
+                            credits-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Store.show-credits(); }
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 2px;
+
+                        Text {
+                            text: Player.artists;
+                            color: Theme.text;
+                            font-size: 15px;
+                            font-weight: 600;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: "Main Artist";
+                            color: Theme.text-dim;
+                            font-size: 13px;
+                        }
+                    }
+                }
+            }
+
+            if Player.dj: Rectangle {
+                border-radius: Theme.radius;
+                background: Theme.surface-raised;
+                height: djnote.preferred-height;
+
+                djnote := VerticalLayout {
+                    padding: 16px;
+                    spacing: 6px;
+                    Text { text: "The DJ doesn't have a queue"; color: Theme.text; font-size: 16px; font-weight: 700; wrap: word-wrap; }
+                    Text { text: "Your DJ picks each song for you in the moment. Tap the DJ button in the player bar to switch things up."; color: Theme.text-dim; font-size: 14px; wrap: word-wrap; }
+                }
+            }
+
+            if Panels.queue.length > 0 && !Player.dj: Rectangle {
+                border-radius: Theme.radius;
+                background: Theme.surface-raised;
+                height: upnext.preferred-height;
+
+                upnext := VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+
+                    HorizontalLayout {
+                        Text {
+                            horizontal-stretch: 1;
+                            text: "Next in queue";
+                            color: Theme.text;
+                            font-size: 16px;
+                            font-weight: 700;
+                        }
+
+                        Text {
+                            text: "Open queue";
+                            color: open-ta.has-hover ? Theme.text : Theme.text-dim;
+                            font-size: 14px;
+                            font-weight: 700;
+                            animate color { duration: Theme.fast; }
+
+                            open-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Panels.open-panel("queue"); }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        height: 56px;
+                        border-radius: 4px;
+                        background: next-ta.has-hover ? Theme.hover : transparent;
+
+                        next-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            double-clicked => { Panels.play-queue-item(Panels.queue[0], 0); }
+                        }
+
+                        HorizontalLayout {
+                            padding: 4px;
+                            spacing: 12px;
+
+                            Rectangle {
+                                width: 48px;
+                                border-radius: 4px;
+                                background: Theme.surface-high;
+                                clip: true;
+
+                                Image {
+                                    width: 100%;
+                                    height: 100%;
+                                    source: Panels.queue[0].art;
+                                    image-fit: cover;
+                                }
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 2px;
+
+                                Text {
+                                    text: Panels.queue[0].title;
+                                    color: Theme.text;
+                                    font-size: 15px;
+                                    overflow: elide;
+                                }
+
+                                Text {
+                                    text: Panels.queue[0].artists;
+                                    color: Theme.text-dim;
+                                    font-size: 13px;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

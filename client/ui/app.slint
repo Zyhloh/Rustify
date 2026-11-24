@@ -1,0 +1,425 @@
+import "../assets/fonts/Figtree.ttf";
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { PillButton } from "components.slint";
+import { TopBar, Chrome } from "topbar.slint";
+import { LibraryPanel } from "library.slint";
+import { HomePage, ShowAllPage } from "home.slint";
+import { NowPlayingPanel } from "nowplaying.slint";
+import { PlayerBar } from "playerbar.slint";
+import { CollectionPage } from "collection.slint";
+import { PickerOverlay } from "picker.slint";
+import { ArtistPage } from "artist.slint";
+import { SearchPage, CategoryPage, RecentSearches } from "search.slint";
+import { QueuePanel, DevicesPanel, FriendsPanel } from "panels.slint";
+import { LyricsPage } from "lyrics.slint";
+import { ShowPage } from "show.slint";
+import { FullscreenView, MiniView } from "views.slint";
+import { NewsPage } from "news.slint";
+import { AccountMenu, ProfilePage, HistoryPage, SettingsPage, ElsewhereBar, SetupOverlay } from "account.slint";
+import { ContextMenu, ToastBar, CreditsDialog } from "menu.slint";
+import { ItemMenuView, EditDialog, ConfirmDialog } from "items.slint";
+import { Store, Player, Shell, Picker, Menu, ItemMenu, PlaylistEdit, Confirm, MenuEntry, Toast, Credits, Panels, Prefs, ProfileData, CardData, SectionData, ArtistData, TrackData, CollectionData, PickerItem, NamedItem, ArtistPageData, TileData, LyricLine, DeviceData, FriendData } from "store.slint";
+
+export { Store, Player, Shell, Picker, Menu, ItemMenu, PlaylistEdit, Confirm, MenuEntry, Toast, Credits, Panels, Prefs, ProfileData, CardData, SectionData, ArtistData, TrackData, CollectionData, PickerItem, NamedItem, ArtistPageData, TileData, LyricLine, DeviceData, FriendData }
+
+component Splitter inherits TouchArea {
+    callback dragged(length);
+    width: 8px;
+    mouse-cursor: col-resize;
+    moved => { root.dragged(self.mouse-x - self.pressed-x); }
+
+    Rectangle {
+        x: 3px;
+        y: 12px;
+        width: 2px;
+        height: parent.height - 24px;
+        border-radius: 1px;
+        background: root.pressed ? Theme.text-dim : Theme.text-faint;
+        opacity: root.has-hover || root.pressed ? 1 : 0;
+        animate opacity { duration: 160ms; }
+    }
+}
+
+component Edge inherits TouchArea {
+    in property <string> direction;
+    pointer-event(ev) => {
+        if ev.button == PointerEventButton.left && ev.kind == PointerEventKind.down {
+            Shell.resize(root.direction);
+        }
+    }
+}
+
+component LoginOverlay inherits Rectangle {
+    background: Theme.base;
+
+    TouchArea { }
+
+    Chrome { y: 0; }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 20px;
+
+        Icon {
+            x: (parent.width - self.width) / 2;
+            d: Icons.logo;
+            size: 64px;
+            weight: 2px;
+            color: Theme.accent;
+        }
+
+        Text {
+            horizontal-alignment: center;
+            text: "Rustify";
+            color: Theme.text;
+            font-size: 32px;
+            font-weight: 800;
+        }
+
+        Text {
+            horizontal-alignment: center;
+            text: Store.status;
+            color: Theme.text-dim;
+            font-size: 15px;
+        }
+
+        if Store.api-online: HorizontalLayout {
+            alignment: center;
+            PillButton {
+                primary: true;
+                text: "Log in with Spotify";
+                clicked => { Store.login(); }
+            }
+        }
+    }
+}
+
+export component App inherits Window {
+    title: "Rustify";
+    icon: @image-url("../assets/icon.png");
+    preferred-width: 1600px;
+    preferred-height: 900px;
+    min-width: Shell.mini ? 240px : 800px;
+    min-height: Shell.mini ? 240px : 560px;
+    max-width: 100000px;
+    max-height: 100000px;
+    no-frame: true;
+    background: Theme.base;
+    default-font-family: "Figtree";
+    default-font-size: 14px;
+
+    in-out property <length> library-width: 384px;
+    in-out property <length> panel-width: 384px;
+    property <bool> narrow: false;
+    property <bool> panel-fits: true;
+    property <length> library-cap: 480px;
+    property <length> panel-cap: 420px;
+    property <bool> library-compact: Shell.library-collapsed || root.narrow;
+    property <float> library-reveal: root.library-compact ? 0 : 1;
+    animate library-reveal { duration: 240ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    property <length> library-wide: 480px;
+    property <length> library-full: Shell.library-expanded && !root.library-compact ? root.library-wide : max(280px, min(root.library-width, root.library-cap));
+    animate library-full { duration: 260ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    property <length> library-actual: 72px + (root.library-full - 72px) * root.library-reveal;
+    property <length> panel-actual: max(280px, min(root.panel-width, root.panel-cap));
+
+    function relayout() {
+        root.narrow = root.width < 980px;
+        root.panel-fits = root.width >= 1120px;
+        root.library-cap = root.width * 0.3;
+        root.library-wide = max(280px, min(root.width * 0.5, root.width - 860px));
+        root.panel-cap = root.width * 0.26;
+    }
+
+    init => { root.relayout(); }
+    changed width => { root.relayout(); }
+
+    property <bool> panel-empty: Shell.right-panel == "nowplaying" && !Player.has-track;
+    property <float> panel-reveal: Shell.right-panel != "" && !root.panel-empty && root.panel-fits ? 1 : 0;
+    animate panel-reveal { duration: 280ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+    forward-focus: keys;
+    property <bool> immersive: Shell.fullscreen || Shell.mini;
+    property <int> blur-search: Store.blur-search-request;
+    property <bool> recents-open: Store.search-focused && Store.search-query == "" && Store.recent-searches.length > 0;
+    property <length> recents-height: min(440px, 56px + Store.recent-searches.length * 56px);
+    out property <length> search-width: max(180px, min(474px, root.width - 2 * (root.width >= 960px ? 290px : 210px) - 56px));
+    out property <length> search-left: (root.width - (56px + root.search-width)) / 2 + 56px;
+    out property <length> search-bottom: root.recents-open ? 60px + root.recents-height : 56px;
+
+    property <bool> overlay-open: Confirm.open || ItemMenu.open || Menu.open || Credits.open || Store.account-menu-open;
+    changed overlay-open => {
+        if root.overlay-open {
+            keys.focus();
+        }
+    }
+
+    property <bool> editing: PlaylistEdit.open;
+    changed editing => {
+        if !root.editing {
+            keys.focus();
+        }
+    }
+
+    changed blur-search => {
+        keys.focus();
+        Store.search-focused = false;
+    }
+
+    changed immersive => {
+        if !root.immersive {
+            keys.focus();
+        }
+    }
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                if ItemMenu.open {
+                    ItemMenu.close();
+                    return accept;
+                }
+                if Menu.open {
+                    Menu.close();
+                    return accept;
+                }
+                if Store.account-menu-open {
+                    Store.account-menu-open = false;
+                    return accept;
+                }
+                if Confirm.open {
+                    Confirm.cancel();
+                    return accept;
+                }
+                if Credits.open {
+                    Credits.close();
+                    return accept;
+                }
+                if PlaylistEdit.open {
+                    PlaylistEdit.cancel();
+                    return accept;
+                }
+                return reject;
+            }
+            if event.text == " " {
+                Player.toggle();
+                return accept;
+            }
+            if event.modifiers.control && (event.text == "l" || event.text == "k") {
+                Store.focus-search-request += 1;
+                return accept;
+            }
+            if event.modifiers.control && !event.modifiers.alt && !event.modifiers.shift {
+                if event.text == Key.RightArrow {
+                    Player.next();
+                    return accept;
+                }
+                if event.text == Key.LeftArrow {
+                    Player.prev();
+                    return accept;
+                }
+                if event.text == Key.UpArrow || event.text == Key.DownArrow {
+                    Player.set-volume(max(0, min(1, Player.volume + (event.text == Key.UpArrow ? 0.1 : -0.1))));
+                    Player.commit-volume(Player.volume);
+                    return accept;
+                }
+                if event.text == "s" {
+                    Player.toggle-shuffle();
+                    return accept;
+                }
+                if event.text == "r" {
+                    Player.cycle-repeat();
+                    return accept;
+                }
+                if event.text == "," {
+                    Store.open-settings();
+                    return accept;
+                }
+            }
+            if event.modifiers.alt && !event.modifiers.control {
+                if event.modifiers.shift && (event.text == "b" || event.text == "B") {
+                    Player.save-pressed();
+                    return accept;
+                }
+                if event.text == Key.LeftArrow {
+                    Store.go-back();
+                    return accept;
+                }
+                if event.text == Key.RightArrow {
+                    Store.go-forward();
+                    return accept;
+                }
+            }
+            if event.text == Key.F11 {
+                Shell.toggle-fullscreen();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    if !Shell.mini: VerticalLayout {
+        TopBar { }
+
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+
+            LibraryPanel {
+                width: root.library-actual;
+                compact: root.library-reveal < 0.6;
+            }
+
+            Splitter {
+                enabled: !root.library-compact;
+                dragged(dx) => {
+                    Shell.library-expanded = false;
+                    root.library-width = max(280px, min(root.library-cap, root.library-full + dx));
+                }
+            }
+
+            if Store.page == "home": HomePage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "collection": CollectionPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "search": SearchPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "category": CategoryPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "profile": ProfilePage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "settings": SettingsPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "history": HistoryPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "lyrics": LyricsPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "show": ShowPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "news": NewsPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "show-all": ShowAllPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            if Store.page == "artist": ArtistPage {
+                horizontal-stretch: 1;
+                min-width: 360px;
+            }
+
+            Splitter {
+                width: 8px * root.panel-reveal;
+                enabled: root.panel-reveal > 0;
+                dragged(dx) => { root.panel-width = max(280px, min(root.panel-cap, root.panel-actual - dx)); }
+            }
+
+            Rectangle {
+                width: root.panel-actual * root.panel-reveal;
+                opacity: root.panel-reveal;
+                visible: root.panel-reveal > 0;
+
+                if Shell.right-panel == "nowplaying": NowPlayingPanel { }
+                if Shell.right-panel == "queue": QueuePanel { }
+                if Shell.right-panel == "devices": DevicesPanel { }
+                if Shell.right-panel == "friends": FriendsPanel { }
+            }
+        }
+
+        PlayerBar { }
+
+        if Store.playing-elsewhere != "": ElsewhereBar { }
+    }
+
+    if root.recents-open && !Shell.mini: RecentSearches {
+        x: root.search-left;
+        y: 60px;
+        width: root.search-width;
+        height: root.recents-height;
+    }
+
+    PickerOverlay {
+        anchor-x: 220px;
+        anchor-bottom: 76px;
+        opacity: Picker.open ? 1 : 0;
+        visible: self.opacity > 0;
+        animate opacity { duration: 160ms; }
+    }
+
+
+    if Menu.open: ContextMenu { }
+
+    if ItemMenu.open: ItemMenuView { }
+
+    if PlaylistEdit.open: EditDialog { }
+
+    if Confirm.open: ConfirmDialog { }
+
+    CreditsDialog {
+        opacity: Credits.open ? 1 : 0;
+        visible: self.opacity > 0;
+        animate opacity { duration: 180ms; }
+    }
+
+    if Store.account-menu-open: AccountMenu { }
+
+    LoginOverlay {
+        opacity: Store.logged-in ? 0 : 1;
+        visible: self.opacity > 0;
+        animate opacity { duration: 420ms; easing: ease-out; }
+    }
+
+    if !Shell.maximized: Rectangle {
+        Edge { x: 0; y: 0; width: 6px; height: 6px; direction: "nw"; mouse-cursor: nwse-resize; }
+        Edge { x: root.width - 6px; y: 0; width: 6px; height: 6px; direction: "ne"; mouse-cursor: nesw-resize; }
+        Edge { x: 0; y: root.height - 6px; width: 6px; height: 6px; direction: "sw"; mouse-cursor: nesw-resize; }
+        Edge { x: root.width - 6px; y: root.height - 6px; width: 6px; height: 6px; direction: "se"; mouse-cursor: nwse-resize; }
+        Edge { x: 6px; y: 0; width: root.width - 12px; height: 4px; direction: "n"; mouse-cursor: ns-resize; }
+        Edge { x: 6px; y: root.height - 4px; width: root.width - 12px; height: 4px; direction: "s"; mouse-cursor: ns-resize; }
+        Edge { x: 0; y: 6px; width: 4px; height: root.height - 12px; direction: "w"; mouse-cursor: ew-resize; }
+        Edge { x: root.width - 4px; y: 6px; width: 4px; height: root.height - 12px; direction: "e"; mouse-cursor: ew-resize; }
+    }
+
+    if Store.needs-setup: SetupOverlay { }
+
+    if Shell.fullscreen && !Shell.mini: FullscreenView { }
+
+    if Shell.mini: MiniView { }
+
+    if !Shell.mini: ToastBar {
+        x: (root.width - self.width) / 2;
+        y: root.height - (Shell.fullscreen || Store.needs-setup ? 24px : 96px) - self.height;
+    }
+
+}

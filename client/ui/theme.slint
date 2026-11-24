@@ -1,0 +1,31 @@
+export global Theme {
+    out property <color> base: #000000;
+    out property <color> surface: #121212;
+    out property <color> surface-raised: #1f1f1f;
+    out property <color> surface-high: #2a2a2a;
+    out property <color> tile: #ffffff1a;
+    out property <color> tile-hover: #ffffff33;
+    out property <color> hover: #ffffff12;
+    out property <color> press: #ffffff1f;
+    out property <color> text: #ffffff;
+    out property <color> text-dim: #b3b3b3;
+    out property <color> text-faint: #727272;
+    out property <color> accent: #1ed760;
+    out property <color> accent-hover: #3be477;
+    out property <color> danger: #e81123;
+    out property <color> track: #4d4d4d;
+    out property <length> radius: 8px;
+    out property <length> gap: 8px;
+    out property <duration> fast: 120ms;
+    out property <duration> medium: 220ms;
+}
+
+export global Fmt {
+    public pure function time(ms: float) -> string {
+        return "\{floor(ms / 60000)}:\{mod(floor(ms / 1000), 60) < 10 ? "0" : ""}\{mod(floor(ms / 1000), 60)}";
+    }
+
+    public pure function count(n: int) -> string {
+        return n >= 1000000 ? "\{floor(n / 100000) / 10}M" : n >= 1000 ? "\{floor(n / 100) / 10}K" : "\{n}";
+    }
+}

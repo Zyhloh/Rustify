@@ -1,0 +1,463 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { Chip, IconButton, Card, Shortcut, Artwork, Scroller, Bleed, PillButton } from "components.slint";
+import { Store, Player, CardData, SectionData } from "store.slint";
+
+component Hero inherits Rectangle {
+    height: 200px;
+    border-radius: Theme.radius;
+    background: Store.hero-color;
+    clip: true;
+    animate background { duration: 400ms; }
+
+    property <length> art-width: min(330px, root.width * 0.4);
+
+    Image {
+        x: 0;
+        width: root.art-width;
+        height: root.height;
+        source: Store.hero.art;
+        image-fit: cover;
+    }
+
+    VerticalLayout {
+        x: root.art-width + 20px;
+        width: root.width - self.x - 24px;
+        padding-top: 18px;
+        padding-bottom: 18px;
+        spacing: 10px;
+
+        HorizontalLayout {
+            height: 44px;
+            spacing: 12px;
+            Artwork {
+                width: 44px;
+                card: Store.hero;
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 1px;
+                Text { text: Store.hero.title; color: Theme.text; font-size: 15px; font-weight: 600; overflow: elide; }
+                Text { text: "New release"; color: #ffffffb3; font-size: 13px; }
+            }
+        }
+
+        Text {
+            vertical-stretch: 1;
+            min-height: 0px;
+            text: Store.hero-headline;
+            color: Theme.text;
+            font-size: root.width < 760px ? 20px : root.width < 900px ? 24px : 28px;
+            font-weight: 800;
+            letter-spacing: -0.6px;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+
+        HorizontalLayout {
+            height: 32px;
+            spacing: 12px;
+            alignment: start;
+
+            Rectangle {
+                width: listen.preferred-width + 28px;
+                border-radius: 16px;
+                background: listen-ta.pressed ? #ffffff1a : listen-ta.has-hover ? #ffffff3d : #ffffff29;
+                transform-scale: listen-ta.pressed ? 0.96 : listen-ta.has-hover ? 1.04 : 1;
+                animate background { duration: Theme.fast; }
+                animate transform-scale { duration: 140ms; easing: ease-out; }
+
+                listen-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Store.play-card(Store.hero); }
+                }
+
+                listen := Text {
+                    text: "Listen now";
+                    color: Theme.text;
+                    font-size: 14px;
+                    font-weight: 700;
+                }
+            }
+
+            IconButton {
+                icon: Icons.dots;
+                filled: true;
+                ghost: true;
+                idle-color: #ffffffb3;
+                clicked => { Store.card-menu(Store.hero, self.absolute-position.x, self.absolute-position.y + self.height); }
+            }
+        }
+    }
+}
+
+component HomeChips inherits HorizontalLayout {
+    height: 32px;
+    spacing: 8px;
+    alignment: start;
+
+    for chip in [
+        { key: "all", label: "All" },
+        { key: "music", label: "Music" },
+        { key: "podcasts", label: "Podcasts" },
+        { key: "audiobooks", label: "Audiobooks" },
+    ]: Chip {
+        text: chip.label;
+        active: Store.home-filter == chip.key;
+        clicked => { Store.filter-home(Store.home-filter == chip.key ? "all" : chip.key); }
+    }
+}
+
+component ShortcutGrid inherits Rectangle {
+    in property <[CardData]> items;
+    property <int> cols: root.width >= 880px ? 4 : 2;
+    property <length> tile-width: (root.width - (cols - 1) * 8px) / cols;
+
+    height: max(0px, ceil(items.length / cols) * 56px - 8px);
+
+    for item[i] in root.items: Shortcut {
+        x: mod(i, root.cols) * (root.tile-width + 8px);
+        y: floor(i / root.cols) * 56px;
+        width: root.tile-width;
+        data: item;
+        active: Player.context-uri != "" && Player.context-uri == item.uri;
+        playing: Player.playing;
+        play => { if Player.context-uri == item.uri { Player.toggle(); } else { Store.play-card(item); } }
+        open => { Store.open-card(item); }
+    }
+}
+
+export component Shelf inherits VerticalLayout {
+    in property <SectionData> section;
+    in property <bool> from-search: false;
+    out property <int> visible-cols: cards.cols;
+    callback show-all();
+
+    show-all => { Store.open-show-all(root.section, root.from-search); }
+
+    spacing: 2px;
+
+    if root.section.eyebrow != "": Text {
+        x: 12px;
+        text: root.section.eyebrow;
+        color: Theme.text-dim;
+        font-size: 13px;
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-bottom: 4px;
+
+        Text {
+            horizontal-stretch: 1;
+            text: root.section.title;
+            color: Theme.text;
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: -0.6px;
+            overflow: elide;
+        }
+
+        if root.section.items.length > cards.cols: Text {
+            vertical-alignment: center;
+            text: "Show all";
+            color: show-ta.has-hover ? Theme.text : Theme.text-dim;
+            font-size: 14px;
+            font-weight: 700;
+            animate color { duration: Theme.fast; }
+            show-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.show-all(); }
+            }
+        }
+    }
+
+    cards := Rectangle {
+        property <int> cols: max(2, floor(self.width / 180px));
+        property <length> card-width: self.width / cols;
+
+        height: card-width - 24px + 96px;
+
+        for item[i] in root.section.items: Card {
+            visible: i < parent.cols;
+            x: i * parent.card-width;
+            width: parent.card-width;
+            height: parent.height;
+            data: item;
+            active: Player.context-uri != "" && Player.context-uri == item.uri;
+            playing: Player.playing;
+            play => {
+                if Player.context-uri == item.uri {
+                    Player.toggle();
+                } else if root.from-search {
+                    Store.play-search-result(item);
+                } else {
+                    Store.play-card(item);
+                }
+            }
+            open => {
+                if root.from-search {
+                    Store.open-search-result(item);
+                } else {
+                    Store.open-card(item);
+                }
+            }
+        }
+    }
+}
+
+export component CardGrid inherits Rectangle {
+    in property <[CardData]> items;
+    in property <bool> from-search: false;
+    property <int> cols: max(2, floor(self.width / 180px));
+    property <length> card-width: self.width / cols;
+    property <length> card-height: card-width - 24px + 96px;
+
+    height: ceil(root.items.length / cols) * card-height;
+
+    for item[i] in root.items: Card {
+        x: mod(i, root.cols) * root.card-width;
+        y: floor(i / root.cols) * root.card-height;
+        width: root.card-width;
+        height: root.card-height;
+        data: item;
+        active: Player.context-uri != "" && Player.context-uri == item.uri;
+        playing: Player.playing;
+        play => {
+            if Player.context-uri == item.uri {
+                Player.toggle();
+            } else if root.from-search {
+                Store.play-search-result(item);
+            } else {
+                Store.play-card(item);
+            }
+        }
+        open => {
+            if root.from-search {
+                Store.open-search-result(item);
+            } else {
+                Store.open-card(item);
+            }
+        }
+    }
+}
+
+export component ShowAllPage inherits Rectangle {
+    max-width: 100000px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    scroller := Scroller {
+        content-height: content.preferred-height;
+
+        content := VerticalLayout {
+            width: parent.width;
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 72px;
+            padding-bottom: 32px;
+            spacing: 16px;
+
+            Bleed {
+                CardGrid {
+                    items: Store.show-all.items;
+                    from-search: Store.show-all-search;
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        y: 0;
+        height: 64px;
+        background: Theme.surface;
+
+        Rectangle {
+            y: parent.height - 1px;
+            height: 1px;
+            background: #00000040;
+            opacity: min(1, scroller.offset / 32px);
+        }
+
+        Text {
+            x: 24px;
+            y: 20px;
+            text: Store.show-all.title;
+            color: Theme.text;
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: -0.6px;
+            overflow: elide;
+            width: parent.width - 48px;
+        }
+    }
+}
+
+component Skeleton inherits Rectangle {
+    border-radius: 4px;
+    background: Theme.tile;
+}
+
+export component HomePage inherits Rectangle {
+    max-width: 100000px;
+    property <length> chips-top: chips.y - 16px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    Rectangle {
+        y: -scroller.offset * 0.4;
+        height: 340px;
+        background: @linear-gradient(180deg, Store.hero-tint 0%, Theme.surface 100%);
+    }
+
+    scroller := Scroller {
+        content-height: content.preferred-height;
+
+        content := VerticalLayout {
+            width: parent.width;
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 16px;
+            padding-bottom: 32px;
+            spacing: 24px;
+
+            if Store.has-hero && (Store.home-filter == "all" || Store.home-filter == "music"): Hero {
+                opacity: Store.hero.art.width > 0 ? 1 : 0;
+                animate opacity { duration: 400ms; easing: ease-out; }
+            }
+
+            chips := HomeChips { }
+
+            if Store.library-missing: Rectangle {
+                height: 64px;
+                border-radius: 8px;
+                background: Theme.tile;
+
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 12px;
+                    spacing: 12px;
+
+                    Rectangle {
+                        width: 8px;
+                        height: 8px;
+                        y: (parent.height - 8px) / 2;
+                        border-radius: 4px;
+                        background: Theme.accent;
+                    }
+
+                    Text {
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                        text: Store.library-connecting ? "Finish signing in to Spotify for Desktop in your browser, then come back here." : "Your library isn't connected yet. Connect it to load your playlists, likes and recents.";
+                        color: Theme.text;
+                        font-size: 14px;
+                        overflow: elide;
+                    }
+
+                    if !Store.library-connecting: VerticalLayout {
+                        alignment: center;
+                        PillButton {
+                            primary: true;
+                            text: "Connect";
+                            clicked => { Store.connect-library(); }
+                        }
+                    }
+                }
+            }
+
+            if Store.load-error != "" && Store.shortcuts.length == 0 && !Store.library-missing: Rectangle {
+                height: 64px;
+                border-radius: 8px;
+                background: Theme.tile;
+
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    spacing: 12px;
+
+                    Rectangle {
+                        width: 8px;
+                        height: 8px;
+                        y: (parent.height - 8px) / 2;
+                        border-radius: 4px;
+                        background: #f59b23;
+                    }
+
+                    Text {
+                        vertical-alignment: center;
+                        text: Store.load-error;
+                        color: Theme.text;
+                        font-size: 14px;
+                        overflow: elide;
+                    }
+                }
+            }
+
+            if (Store.loading || Store.load-error != "") && Store.shortcuts.length == 0: VerticalLayout {
+                spacing: 8px;
+                for _ in 2: HorizontalLayout {
+                    spacing: 8px;
+                    height: 48px;
+                    Skeleton { }
+                    Skeleton { }
+                    Skeleton { }
+                    Skeleton { }
+                }
+            }
+
+            if Store.home-filter == "all" || Store.home-filter == "music": ShortcutGrid {
+                items: Store.shortcuts;
+                opacity: Store.shortcuts.length > 0 ? 1 : 0;
+                animate opacity { duration: 360ms; easing: ease-out; }
+            }
+
+            for section in Store.sections: Bleed {
+                Shelf { section: section; }
+            }
+
+            if !Store.loading && Store.sections.length == 0 && Store.home-filter != "all": VerticalLayout {
+                padding-top: 64px;
+                spacing: 8px;
+
+                Text {
+                    horizontal-alignment: center;
+                    text: Store.home-filter == "audiobooks" ? "No audiobooks yet" : Store.home-filter == "podcasts" ? "No podcasts yet" : "Nothing here yet";
+                    color: Theme.text;
+                    font-size: 24px;
+                    font-weight: 800;
+                }
+
+                Text {
+                    horizontal-alignment: center;
+                    text: "Things you save will show up here.";
+                    color: Theme.text-dim;
+                    font-size: 14px;
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        y: 0;
+        height: 64px;
+        background: Store.hero-tint;
+        opacity: scroller.offset > root.chips-top ? 1 : 0;
+        animate opacity { duration: 120ms; }
+
+        Rectangle {
+            y: parent.height - 1px;
+            height: 1px;
+            background: #00000040;
+        }
+    }
+
+    HomeChips {
+        y: 16px;
+        x: 24px;
+        visible: scroller.offset > root.chips-top;
+    }
+}

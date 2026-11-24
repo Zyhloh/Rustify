@@ -1,0 +1,16 @@
+/target/
+/dist/
+**/*.rs.bk
+
+config.json
+*.log
+*.key
+*.bin
+token.json
+credentials.json
+
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

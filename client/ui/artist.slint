@@ -1,0 +1,231 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { IconButton, PlayFab, PillButton, Scroller } from "components.slint";
+import { Shelf } from "home.slint";
+import { TrackRow } from "collection.slint";
+import { Store, Player } from "store.slint";
+
+export component ArtistPage inherits Rectangle {
+    max-width: 100000px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    property <bool> playing-this: Player.context-uri != "" && Player.context-uri == Store.artist-page.uri;
+    property <length> pad: 24px;
+    property <length> banner-height: max(260px, min(380px, root.width * 0.42));
+    property <float> chars: max(4, Store.artist-page.name.character-count);
+    property <length> name-size: max(40px, min(96px, (root.width - 2 * root.pad) / root.chars * 1.8));
+    property <length> scroll: scroller.offset;
+    property <bool> show-more: false;
+
+    scroller := Scroller {
+        content-height: page.preferred-height;
+
+        page := VerticalLayout {
+            width: parent.width;
+
+            Rectangle {
+                height: root.banner-height;
+                background: Store.artist-color;
+                clip: true;
+
+                Image {
+                    y: -root.scroll * 0.3;
+                    width: parent.width;
+                    height: parent.height;
+                    source: Store.artist-page.art;
+                    image-fit: cover;
+                    opacity: Store.artist-page.art.width > 0 ? 1 : 0;
+                    animate opacity { duration: 360ms; }
+                }
+
+                Rectangle {
+                    background: @linear-gradient(180deg, #00000000 35%, #00000099 100%);
+                }
+
+                VerticalLayout {
+                    x: root.pad;
+                    y: 0;
+                    width: parent.width - 2 * root.pad;
+                    height: parent.height - 24px;
+                    alignment: end;
+                    spacing: 6px;
+
+                    if Store.artist-page.verified: HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+                        Rectangle {
+                            width: 24px;
+                            height: 24px;
+                            border-radius: 12px;
+                            background: #4cb3ff;
+                            Icon { d: Icons.check; size: 14px; weight: 2.4px; color: Theme.text; }
+                        }
+                        Text { vertical-alignment: center; text: "Verified Artist"; color: Theme.text; font-size: 14px; }
+                    }
+
+                    Text {
+                        text: Store.artist-page.name;
+                        color: Theme.text;
+                        font-size: root.name-size;
+                        font-weight: 800;
+                        letter-spacing: -root.name-size * 0.04;
+                        overflow: elide;
+                    }
+
+                    if Store.artist-page.listeners != "" || Store.artist-page.followers != "": Text {
+                        text: Store.artist-page.listeners != "" ? "\{Store.artist-page.listeners} monthly listeners" : "\{Store.artist-page.followers} followers";
+                        color: Theme.text;
+                        font-size: 15px;
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 104px;
+                background: @linear-gradient(180deg, Store.artist-color.darker(0.55) 0%, Theme.surface 100%);
+
+                HorizontalLayout {
+                    x: root.pad;
+                    y: 24px;
+                    width: parent.width - 2 * root.pad;
+                    height: 56px;
+                    spacing: 24px;
+                    alignment: start;
+
+                    PlayFab {
+                        size: 56px;
+                        playing: root.playing-this && Player.playing;
+                        clicked => { Store.play-artist(); }
+                    }
+
+                    IconButton {
+                        y: 4px;
+                        width: 48px;
+                        height: 48px;
+                        icon: Icons.shuffle;
+                        icon-size: 30px;
+                        dot: true;
+                        active: Player.shuffle;
+                        clicked => { Player.toggle-shuffle(); }
+                    }
+
+                    PillButton {
+                        y: 12px;
+                        outline: true;
+                        text: Store.artist-page.following ? "Following" : "Follow";
+                        clicked => { Store.toggle-follow(Store.artist-page.id); }
+                    }
+
+                    IconButton {
+                        y: 4px;
+                        width: 48px;
+                        height: 48px;
+                        icon: Icons.dots;
+                        filled: true;
+                        icon-size: 28px;
+                        clicked => {
+                            Store.card-menu({
+                                id: Store.artist-page.id,
+                                uri: "spotify:artist:" + Store.artist-page.id,
+                                kind: "artist",
+                                title: Store.artist-page.name,
+                            }, self.absolute-position.x, self.absolute-position.y + self.height);
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                padding-left: root.pad;
+                padding-right: root.pad;
+                padding-bottom: 8px;
+                spacing: 8px;
+
+                if Store.artist-top.length > 0: Text {
+                    text: "Popular";
+                    color: Theme.text;
+                    font-size: 24px;
+                    font-weight: 800;
+                    letter-spacing: -0.6px;
+                }
+
+                if Store.artist-loading && Store.artist-top.length == 0: VerticalLayout {
+                    spacing: 8px;
+                    for _ in 5: Rectangle {
+                        height: 44px;
+                        border-radius: 4px;
+                        background: Theme.tile;
+                        opacity: 0.5;
+                    }
+                }
+
+                VerticalLayout {
+                    for track[i] in Store.artist-top: TrackRow {
+                        height: i < (root.show-more ? 10 : 5) ? 52px : 0px;
+                        visible: i < (root.show-more ? 10 : 5);
+                        data: track;
+                        show-art: true;
+                        show-album: false;
+                        show-third: false;
+                        play => { Store.play-artist-track(track); }
+                    }
+                }
+
+                if Store.artist-top.length > 5: Rectangle {
+                    height: 40px;
+                    more-ta := TouchArea { mouse-cursor: pointer; clicked => { root.show-more = !root.show-more; } }
+                    Text {
+                        x: 16px;
+                        text: root.show-more ? "Show less" : "See more";
+                        color: more-ta.has-hover ? Theme.text : Theme.text-dim;
+                        font-size: 14px;
+                        font-weight: 700;
+                    }
+                }
+            }
+
+            VerticalLayout {
+                padding-left: root.pad - 12px;
+                padding-right: root.pad - 12px;
+                padding-bottom: 32px;
+                spacing: 24px;
+
+                for section in Store.artist-shelves: Shelf {
+                    section: section;
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        y: 0;
+        height: 64px;
+        background: Store.artist-color.darker(0.25);
+        opacity: max(0, min(1, (root.scroll - root.banner-height + 100px) / 40px));
+
+        HorizontalLayout {
+            x: root.pad;
+            spacing: 12px;
+            alignment: start;
+
+            PlayFab {
+                y: 12px;
+                size: 40px;
+                playing: root.playing-this && Player.playing;
+                clicked => { Store.play-artist(); }
+            }
+
+            Text {
+                vertical-alignment: center;
+                text: Store.artist-page.name;
+                color: Theme.text;
+                font-size: 24px;
+                font-weight: 800;
+                letter-spacing: -0.6px;
+                overflow: elide;
+            }
+        }
+    }
+}

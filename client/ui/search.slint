@@ -1,0 +1,515 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { Chip, PlayFab, Artwork, Scroller, Bleed } from "components.slint";
+import { Shelf, CardGrid } from "home.slint";
+import { TrackRow } from "collection.slint";
+import { Store, Player, TileData, CardData } from "store.slint";
+
+component BrowseTile inherits Rectangle {
+    in property <TileData> tile;
+
+    border-radius: 8px;
+    background: root.tile.color;
+    clip: true;
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Store.open-tile(root.tile); }
+    }
+
+    Text {
+        x: 16px;
+        y: 16px;
+        width: root.width - 32px;
+        text: root.tile.title;
+        color: Theme.text;
+        font-size: min(24px, root.width / 8);
+        font-weight: 800;
+        letter-spacing: -0.4px;
+        wrap: word-wrap;
+    }
+
+    Rectangle {
+        x: root.width - self.width * 0.78;
+        y: root.height - self.height * 0.78;
+        width: min(110px, root.height * 0.62);
+        height: self.width;
+        transform-rotation: 25deg;
+        transform-scale: ta.has-hover ? 1.06 : 1;
+        drop-shadow-blur: 12px;
+        drop-shadow-offset-y: 4px;
+        drop-shadow-color: #00000080;
+        border-radius: 4px;
+        clip: true;
+        animate transform-scale { duration: 220ms; easing: ease-out; }
+
+        Image {
+            width: 100%;
+            height: 100%;
+            source: root.tile.art;
+            image-fit: cover;
+            opacity: root.tile.art.width > 0 ? 1 : 0;
+            animate opacity { duration: 260ms; }
+        }
+    }
+
+    Rectangle {
+        background: ta.pressed ? #00000026 : ta.has-hover ? #ffffff0f : transparent;
+        animate background { duration: Theme.fast; }
+    }
+}
+
+component TopResult inherits Rectangle {
+    in property <CardData> data;
+    property <bool> active: Player.context-uri != "" && Player.context-uri == root.data.uri;
+    property <bool> hot: ta.has-hover || fab.hovered;
+
+    height: 236px;
+    border-radius: 8px;
+    background: root.hot ? #2a2a2a : #181818;
+    animate background { duration: Theme.medium; easing: ease-out; }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Store.open-search-result(root.data); }
+    }
+
+    Artwork {
+        x: 20px;
+        y: 20px;
+        width: 96px;
+        height: 96px;
+        card: root.data;
+        corner: 6px;
+        drop-shadow-blur: 16px;
+        drop-shadow-color: #00000070;
+    }
+
+    Text {
+        x: 20px;
+        y: 136px;
+        width: root.width - 40px;
+        text: root.data.title;
+        color: Theme.text;
+        font-size: 32px;
+        font-weight: 800;
+        letter-spacing: -1px;
+        overflow: elide;
+    }
+
+    HorizontalLayout {
+        x: 20px;
+        y: 186px;
+        height: 28px;
+        spacing: 8px;
+        alignment: start;
+
+        if root.data.kind != "artist" && root.data.subtitle != "": Text {
+            vertical-alignment: center;
+            text: root.data.subtitle;
+            color: Theme.text-dim;
+            font-size: 14px;
+            overflow: elide;
+            max-width: root.width - 160px;
+        }
+
+        Rectangle {
+            width: kind-label.preferred-width + 20px;
+            border-radius: 14px;
+            background: #121212;
+
+            kind-label := Text {
+                text: root.data.kind == "artist" ? "Artist" : root.data.kind == "track" ? "Song" : root.data.kind == "show" ? "Podcast" : root.data.kind == "episode" ? "Episode" : root.data.kind == "album" ? "Album" : "Playlist";
+                color: Theme.text;
+                font-size: 12px;
+                font-weight: 700;
+            }
+        }
+    }
+
+    fab := PlayFab {
+        x: root.width - self.width - 20px;
+        y: root.height - self.height - (root.hot || root.active ? 20px : 8px);
+        opacity: root.hot || root.active ? 1 : 0;
+        playing: root.active && Player.playing;
+        animate y { duration: 260ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        animate opacity { duration: 200ms; }
+        clicked => {
+            if root.active {
+                Player.toggle();
+            } else {
+                Store.play-search-result(root.data);
+            }
+        }
+    }
+}
+
+component SectionTitle inherits Text {
+    color: Theme.text;
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.6px;
+}
+
+component Empty inherits VerticalLayout {
+    in property <string> query;
+
+    alignment: center;
+    spacing: 12px;
+    padding-top: 80px;
+
+    Text {
+        horizontal-alignment: center;
+        text: "No results found for \"\{root.query}\"";
+        color: Theme.text;
+        font-size: 24px;
+        font-weight: 800;
+        wrap: word-wrap;
+    }
+
+    Text {
+        horizontal-alignment: center;
+        text: "Please make sure your words are spelled correctly, or use fewer or different keywords.";
+        color: Theme.text-dim;
+        font-size: 15px;
+        wrap: word-wrap;
+    }
+}
+
+component Skeletons inherits VerticalLayout {
+    spacing: 10px;
+    for _ in 6: Rectangle {
+        height: 52px;
+        border-radius: 4px;
+        background: Theme.tile;
+        opacity: 0.6;
+    }
+}
+
+export component SearchPage inherits Rectangle {
+    max-width: 100000px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    property <bool> browsing: Store.search-query == "";
+    property <length> pad: 24px;
+    property <bool> side-by-side: root.width >= 820px;
+
+    scroller := Scroller {
+        content-height: page.preferred-height;
+
+        page := VerticalLayout {
+            width: parent.width;
+            padding-left: root.pad;
+            padding-right: root.pad;
+            padding-top: root.browsing ? 24px : 72px;
+            padding-bottom: 32px;
+            spacing: 24px;
+
+            if root.browsing: SectionTitle { text: "Browse all"; }
+
+            if root.browsing: Rectangle {
+                property <int> cols: self.width >= 1100px ? 5 : self.width >= 760px ? 4 : self.width >= 520px ? 3 : 2;
+                property <length> gap: 24px;
+                property <length> tile-w: (self.width - (cols - 1) * gap) / cols;
+                property <length> tile-h: tile-w * 0.56;
+
+                height: ceil(Store.browse-tiles.length / cols) * (tile-h + gap);
+
+                for tile[i] in Store.browse-tiles: BrowseTile {
+                    x: mod(i, parent.cols) * (parent.tile-w + parent.gap);
+                    y: floor(i / parent.cols) * (parent.tile-h + parent.gap);
+                    width: parent.tile-w;
+                    height: parent.tile-h;
+                    tile: tile;
+                }
+            }
+
+            if !root.browsing && Store.search-loading && Store.search-tracks.length == 0 && Store.search-grid.length == 0: Skeletons { }
+
+            if !root.browsing && !Store.search-loading && Store.search-empty: Empty { query: Store.search-query; }
+
+            if !root.browsing && Store.search-filter == "all" && root.side-by-side && (Store.has-top || Store.search-tracks.length > 0): HorizontalLayout {
+                spacing: 24px;
+
+                if Store.has-top: VerticalLayout {
+                    width: min(460px, (root.width - 2 * root.pad) * 0.42);
+                    alignment: start;
+                    spacing: 12px;
+                    SectionTitle { text: "Top result"; }
+                    TopResult { data: Store.search-top; }
+                }
+
+                if Store.search-tracks.length > 0: VerticalLayout {
+                    alignment: start;
+                    spacing: 12px;
+                    SectionTitle { text: "Songs"; }
+                    VerticalLayout {
+                        for track[i] in Store.search-tracks: TrackRow {
+                            visible: i < 4;
+                            height: i < 4 ? 52px : 0px;
+                            data: track;
+                            show-art: true;
+                            show-album: false;
+                            show-third: false;
+                            show-index: false;
+                            play => { Store.play-search-track(track); }
+                        }
+                    }
+                }
+            }
+
+            if !root.browsing && Store.search-filter == "all" && !root.side-by-side && Store.has-top: VerticalLayout {
+                spacing: 12px;
+                SectionTitle { text: "Top result"; }
+                TopResult { data: Store.search-top; }
+            }
+
+            if !root.browsing && Store.search-filter == "all" && !root.side-by-side && Store.search-tracks.length > 0: VerticalLayout {
+                spacing: 12px;
+                SectionTitle { text: "Songs"; }
+                VerticalLayout {
+                    for track[i] in Store.search-tracks: TrackRow {
+                        visible: i < 4;
+                        height: i < 4 ? 52px : 0px;
+                        data: track;
+                        show-art: true;
+                        show-album: false;
+                        show-third: false;
+                        show-index: false;
+                        play => { Store.play-search-track(track); }
+                    }
+                }
+            }
+
+            if !root.browsing && Store.search-filter == "songs": VerticalLayout {
+                for track in Store.search-tracks: TrackRow {
+                    data: track;
+                    show-art: true;
+                    show-album: root.width > 640px;
+                    show-third: false;
+                    play => { Store.play-search-track(track); }
+                }
+            }
+
+            if !root.browsing && Store.search-filter != "all" && Store.search-filter != "songs" && Store.search-grid.length > 0: Bleed {
+                CardGrid {
+                    items: Store.search-grid;
+                    from-search: true;
+                }
+            }
+
+            if !root.browsing: Bleed {
+                gap: 28px;
+                for section in Store.search-sections: Shelf {
+                    section: section;
+                    from-search: true;
+                }
+            }
+        }
+    }
+
+    if !root.browsing: Rectangle {
+        y: 0;
+        height: 64px;
+        background: Theme.surface;
+
+        Rectangle {
+            y: parent.height - 1px;
+            height: 1px;
+            background: #ffffff10;
+            opacity: min(1, scroller.offset / 24px);
+        }
+
+        HorizontalLayout {
+            x: root.pad;
+            y: 16px;
+            height: 32px;
+            spacing: 8px;
+            alignment: start;
+
+            for chip in [
+                { key: "all", label: "All" },
+                { key: "songs", label: "Songs" },
+                { key: "artists", label: "Artists" },
+                { key: "albums", label: "Albums" },
+                { key: "playlists", label: "Playlists" },
+                { key: "podcasts", label: "Podcasts & Shows" },
+            ]: Chip {
+                text: chip.label;
+                active: Store.search-filter == chip.key;
+                clicked => { Store.search-filter-picked(chip.key); }
+            }
+        }
+    }
+}
+
+export component CategoryPage inherits Rectangle {
+    max-width: 100000px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    property <length> pad: 24px;
+
+    scroller := Scroller {
+        content-height: page.preferred-height;
+
+        page := VerticalLayout {
+            width: parent.width;
+
+            Rectangle {
+                height: 232px;
+                background: @linear-gradient(180deg, Store.category.color 0%, Store.category.color.darker(0.5) 100%);
+
+                Text {
+                    x: root.pad;
+                    y: parent.height - self.height - 28px;
+                    width: parent.width - 2 * root.pad;
+                    text: Store.category.title;
+                    color: Theme.text;
+                    font-size: min(96px, max(40px, root.width / 9));
+                    font-weight: 800;
+                    letter-spacing: -2px;
+                    overflow: elide;
+                }
+            }
+
+            VerticalLayout {
+                padding-left: root.pad;
+                padding-right: root.pad;
+                padding-top: 24px;
+                padding-bottom: 32px;
+                spacing: 28px;
+
+                if Store.category-loading: Skeletons { }
+
+                if Store.category-tracks.length > 0: VerticalLayout {
+                    spacing: 8px;
+                    SectionTitle { text: "Popular songs"; }
+                    for track in Store.category-tracks: TrackRow {
+                        data: track;
+                        show-art: true;
+                        show-album: root.width > 640px;
+                        show-third: false;
+                        play => { Store.play-category-track(track); }
+                    }
+                }
+
+                Bleed {
+                    gap: 28px;
+                    for section in Store.category-sections: Shelf { section: section; }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        y: 0;
+        height: 64px;
+        background: Store.category.color.darker(0.4);
+        opacity: max(0, min(1, (scroller.offset - 140px) / 60px));
+
+        Text {
+            x: root.pad;
+            text: Store.category.title;
+            color: Theme.text;
+            font-size: 24px;
+            font-weight: 800;
+            overflow: elide;
+        }
+    }
+}
+
+export component RecentSearches inherits Rectangle {
+    border-radius: 8px;
+    background: #282828;
+    drop-shadow-blur: 24px;
+    drop-shadow-offset-y: 8px;
+    drop-shadow-color: #000000b3;
+    clip: true;
+
+    TouchArea { }
+
+    VerticalLayout {
+        padding: 8px;
+
+        header := HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            height: 40px;
+
+            Text {
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+                text: "Recent searches";
+                color: Theme.text;
+                font-size: 15px;
+                font-weight: 700;
+            }
+
+            Text {
+                vertical-alignment: center;
+                text: "Clear";
+                color: clear-ta.has-hover ? Theme.text : Theme.text-dim;
+                font-size: 13px;
+                font-weight: 700;
+                clear-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Store.clear-recent(); }
+                }
+            }
+        }
+
+        Scroller {
+            vertical-stretch: 1;
+            content-height: rows.preferred-height;
+
+            rows := VerticalLayout {
+                width: parent.width;
+
+                for item in Store.recent-searches: Rectangle {
+                    height: 56px;
+                    border-radius: 4px;
+                    background: row-ta.has-hover ? #3e3e3e : transparent;
+
+                    row-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Store.open-search-result(item); }
+                    }
+
+                    Artwork {
+                        x: 8px;
+                        width: 44px;
+                        height: 44px;
+                        card: item;
+                    }
+
+                    VerticalLayout {
+                        x: 64px;
+                        width: parent.width - 64px - 44px;
+                        alignment: center;
+                        spacing: 2px;
+                        Text { text: item.title; color: Theme.text; font-size: 15px; overflow: elide; }
+                        Text { text: item.subtitle; color: Theme.text-dim; font-size: 13px; overflow: elide; }
+                    }
+
+                    Rectangle {
+                        x: parent.width - 36px;
+                        width: 28px;
+                        height: 28px;
+                        border-radius: 14px;
+                        opacity: row-ta.has-hover || x-ta.has-hover ? 1 : 0;
+                        background: x-ta.has-hover ? #ffffff1a : transparent;
+                        x-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Store.remove-recent(item); }
+                        }
+                        Icon { d: Icons.close; size: 14px; color: Theme.text-dim; }
+                    }
+                }
+            }
+        }
+    }
+}

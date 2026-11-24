@@ -1,0 +1,254 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { IconButton, Chip, PillButton, Artwork, Scroller, EqBars, InlineSearch } from "components.slint";
+import { Store, Player, Shell, CardData } from "store.slint";
+import { CardGrid } from "home.slint";
+
+component LibraryRow inherits Rectangle {
+    in property <CardData> data;
+    in property <bool> compact: false;
+    property <bool> active: Player.context-uri != "" && Player.context-uri == root.data.uri;
+
+    height: 58px;
+    border-radius: 6px;
+    background: ta.pressed ? #ffffff1a : ta.has-hover ? Theme.hover : transparent;
+    animate background { duration: Theme.medium; easing: ease-out; }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Store.open-card(root.data); }
+        double-clicked => { Store.play-card(root.data); }
+        pointer-event(ev) => {
+            if ev.button == PointerEventButton.right && ev.kind == PointerEventKind.down {
+                Store.card-menu(root.data, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
+    }
+
+    Artwork {
+        x: root.compact ? (root.width - 48px) / 2 : 8px;
+        width: 48px;
+        height: 48px;
+        card: root.data;
+    }
+
+    if !root.compact: VerticalLayout {
+        x: 68px;
+        width: root.width - 76px - (root.active ? 28px : 0px);
+        alignment: center;
+        spacing: 3px;
+
+        Text {
+            text: root.data.title;
+            color: root.active ? Theme.accent : Theme.text;
+            font-size: 15px;
+            overflow: elide;
+        }
+
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+
+            if root.data.pinned: Icon {
+                y: 1px;
+                d: Icons.pin;
+                filled: true;
+                size: 12px;
+                color: Theme.accent;
+            }
+
+            Text {
+                text: root.data.subtitle;
+                color: Theme.text-dim;
+                font-size: 13px;
+                overflow: elide;
+            }
+        }
+    }
+
+    if root.active && !root.compact && Player.playing: EqBars {
+        x: root.width - 30px;
+        playing: true;
+    }
+
+    if root.active && !root.compact && !Player.playing: Icon {
+        x: root.width - 32px;
+        d: Icons.speaker;
+        size: 16px;
+        color: Theme.accent;
+    }
+}
+
+export component LibraryPanel inherits Rectangle {
+    in property <bool> compact: false;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    VerticalLayout {
+        padding-top: 12px;
+        spacing: 8px;
+
+        if root.compact: Rectangle {
+            height: 40px;
+            IconButton {
+                icon: Icons.library;
+                icon-size: 22px;
+                ghost: true;
+                clicked => { Shell.library-collapsed = false; }
+            }
+        }
+
+        if !root.compact: HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            height: 40px;
+            spacing: 8px;
+
+            Rectangle {
+                horizontal-stretch: 1;
+
+                title-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Shell.library-collapsed = true; }
+                }
+
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: 10px;
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        d: Icons.library;
+                        size: 22px;
+                        color: title-ta.has-hover ? Theme.text : Theme.text-dim;
+                        animate color { duration: Theme.fast; }
+                    }
+                    Text {
+                        vertical-alignment: center;
+                        text: "Your Library";
+                        color: title-ta.has-hover ? Theme.text : #e6e6e6;
+                        font-size: 16px;
+                        font-weight: 700;
+                        overflow: elide;
+                        animate color { duration: Theme.fast; }
+                    }
+                }
+            }
+
+            PillButton {
+                y: 4px;
+                text: "Create";
+                icon: Icons.plus;
+                clicked => { Store.new-playlist(); }
+            }
+
+            IconButton {
+                y: 4px;
+                icon: Shell.library-expanded ? Icons.collapse : Icons.expand;
+                icon-size: 16px;
+                ghost: true;
+                clicked => { Shell.library-expanded = !Shell.library-expanded; }
+            }
+        }
+
+        if !root.compact: HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            height: 32px;
+            spacing: 8px;
+            alignment: start;
+
+            if Store.library-filter != "": Rectangle {
+                width: 32px;
+                border-radius: 16px;
+                background: clear-ta.has-hover ? Theme.tile-hover : Theme.tile;
+                transform-scale: clear-ta.pressed ? 0.92 : 1;
+                animate background { duration: Theme.fast; }
+                animate transform-scale { duration: 120ms; easing: ease-out; }
+                clear-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Store.filter-library(""); }
+                }
+                Icon { d: Icons.close; size: 16px; color: Theme.text; }
+            }
+
+            for filter in [
+                { key: "playlist", label: "Playlists" },
+                { key: "podcast", label: "Podcasts" },
+                { key: "album", label: "Albums" },
+                { key: "artist", label: "Artists" },
+            ]: Chip {
+                text: filter.label;
+                active: Store.library-filter == filter.key;
+                clicked => { Store.filter-library(Store.library-filter == filter.key ? "" : filter.key); }
+            }
+        }
+
+        if !root.compact: HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            height: 36px;
+
+            InlineSearch {
+                y: 2px;
+                placeholder: "Search in Your Library";
+                full-width: 200px;
+                text <=> Store.library-query;
+                edited(q) => { Store.library-search(q); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Rectangle {
+                y: 2px;
+                height: 32px;
+                width: recents.preferred-width + 44px;
+                border-radius: 16px;
+                background: sort-ta.has-hover ? Theme.hover : transparent;
+                animate background { duration: Theme.fast; }
+
+                sort-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Store.library-sort-menu(self.absolute-position.x + self.width - 180px, self.absolute-position.y + self.height + 4px); }
+                }
+
+                recents := Text {
+                    x: 10px;
+                    text: Store.library-sort;
+                    color: sort-ta.has-hover ? Theme.text : Theme.text-dim;
+                    font-size: 14px;
+                    animate color { duration: Theme.fast; }
+                }
+
+                Icon {
+                    x: parent.width - 28px;
+                    d: Icons.sort;
+                    size: 18px;
+                    color: sort-ta.has-hover ? Theme.text : Theme.text-dim;
+                    animate color { duration: Theme.fast; }
+                }
+            }
+        }
+
+        Scroller {
+            vertical-stretch: 1;
+            content-height: rows.preferred-height;
+
+            rows := VerticalLayout {
+                width: parent.width;
+                padding-left: 8px;
+                padding-right: 8px;
+                padding-bottom: 8px;
+
+                if Shell.library-expanded && !root.compact: CardGrid {
+                    items: Store.library;
+                }
+
+                if !Shell.library-expanded || root.compact: VerticalLayout {
+                    for item in Store.library: LibraryRow {
+                        data: item;
+                        compact: root.compact;
+                    }
+                }
+            }
+        }
+    }
+}

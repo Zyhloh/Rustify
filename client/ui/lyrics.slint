@@ -1,0 +1,114 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { Store, Player, Panels, LyricLine } from "store.slint";
+
+export component LyricsPage inherits Rectangle {
+    min-width: 0px;
+    preferred-width: 0px;
+    max-width: 100000px;
+    min-height: 0px;
+    preferred-height: 0px;
+    max-height: 100000px;
+    border-radius: Theme.radius;
+    background: Panels.lyrics-color;
+    clip: true;
+    animate background { duration: 600ms; }
+
+    property <length> pad: max(24px, root.width * 0.08);
+    property <length> follow-y: 0px;
+    animate follow-y { duration: 420ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    changed follow-y => {
+        flick.content-y = -max(0px, min(root.follow-y, flick.content-height - flick.height));
+    }
+
+    flick := Flickable {
+        min-width: 0px;
+        preferred-width: 0px;
+        max-width: 100000px;
+        min-height: 0px;
+        preferred-height: 0px;
+        max-height: 100000px;
+        visible: Panels.lyrics-state == "ready";
+        content-width: root.width;
+        content-height: lines.preferred-height;
+
+        lines := VerticalLayout {
+            width: root.width;
+            padding-left: root.pad;
+            padding-right: root.pad;
+            padding-top: 48px;
+            padding-bottom: root.height * 0.5;
+            spacing: 18px;
+
+            for line[i] in Panels.lyrics: Rectangle {
+                property <bool> sung: Panels.lyrics-synced && Player.position >= line.end;
+                property <bool> current: Panels.lyrics-synced && Player.position >= line.start && Player.position < line.end;
+                changed current => {
+                    if self.current {
+                        root.follow-y = self.y - flick.height * 0.3;
+                    }
+                }
+
+                height: text.preferred-height;
+
+                ta := TouchArea {
+                    mouse-cursor: Panels.lyrics-synced ? pointer : default;
+                    clicked => {
+                        if Panels.lyrics-synced {
+                            Player.seek(line.start);
+                        }
+                    }
+                }
+
+                text := Text {
+                    width: parent.width;
+                    text: line.text == "" ? "♪" : line.text;
+                    wrap: word-wrap;
+                    font-size: min(36px, max(22px, root.width / 26));
+                    font-weight: 800;
+                    letter-spacing: -0.4px;
+                    color: !Panels.lyrics-synced ? Theme.text : parent.current ? #ffffff : parent.sung ? #ffffffb3 : ta.has-hover ? #000000b3 : #00000080;
+                    animate color { duration: 260ms; }
+                }
+            }
+
+            if Panels.lyrics-provider != "": Text {
+                text: "Lyrics provided by \{Panels.lyrics-provider}";
+                color: #ffffffb3;
+                font-size: 13px;
+            }
+        }
+    }
+
+    if Panels.lyrics-state != "ready": VerticalLayout {
+        alignment: center;
+        spacing: 14px;
+        padding: 32px;
+
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                d: Icons.lyrics;
+                size: 48px;
+                color: #ffffffb3;
+            }
+        }
+
+        Text {
+            horizontal-alignment: center;
+            text: !Player.has-track ? "Play a song to see its lyrics" : Panels.lyrics-state == "loading" ? "Loading lyrics…" : "No lyrics for this one";
+            color: Theme.text;
+            font-size: 24px;
+            font-weight: 800;
+            wrap: word-wrap;
+        }
+
+        if Player.has-track && Panels.lyrics-state == "none": Text {
+            horizontal-alignment: center;
+            text: "Spotify doesn't have lyrics for this song yet.";
+            color: #ffffffb3;
+            font-size: 15px;
+            wrap: word-wrap;
+        }
+    }
+}

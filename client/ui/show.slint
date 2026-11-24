@@ -1,0 +1,520 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { IconButton, PlayFab, Scroller } from "components.slint";
+import { Store, Player, EpisodeData } from "store.slint";
+
+component EpisodeRow inherits Rectangle {
+    in property <EpisodeData> data;
+    in property <bool> show-name;
+    property <bool> current: Player.track-uri != "" && Player.track-uri == root.data.uri;
+    property <length> art-size: root.width > 560px ? 112px : 72px;
+
+    height: content.preferred-height + 32px;
+    border-radius: 8px;
+    background: ta.has-hover ? Theme.hover : transparent;
+    animate background { duration: Theme.fast; }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Store.play-episode(root.data); }
+        pointer-event(ev) => {
+            if ev.button == PointerEventButton.right && ev.kind == PointerEventKind.down {
+                Store.card-menu({
+                    id: root.data.id,
+                    uri: root.data.uri,
+                    kind: "episode",
+                    title: root.data.title,
+                    subtitle: root.data.show,
+                    image-url: root.data.image-url,
+                    art: root.data.art,
+                }, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
+    }
+
+    Rectangle {
+        x: 16px;
+        y: 0;
+        width: parent.width - 32px;
+        height: 1px;
+        background: #ffffff12;
+    }
+
+    content := HorizontalLayout {
+        x: 16px;
+        y: 16px;
+        width: parent.width - 32px;
+        spacing: 24px;
+
+        Rectangle {
+            width: root.art-size;
+            height: root.art-size;
+            border-radius: 8px;
+            background: Theme.surface-high;
+            clip: true;
+
+            Image {
+                width: 100%;
+                height: 100%;
+                source: root.data.art;
+                image-fit: cover;
+                opacity: root.data.art.width > 0 ? 1 : 0;
+                animate opacity { duration: 220ms; }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 6px;
+            alignment: start;
+
+            Text {
+                text: root.data.title;
+                color: root.current ? Theme.accent : Theme.text;
+                font-size: 16px;
+                font-weight: 700;
+                overflow: elide;
+            }
+
+            if root.show-name && root.data.show != "": Text {
+                text: root.data.show;
+                color: Theme.text;
+                font-size: 14px;
+                overflow: elide;
+            }
+
+            Rectangle {
+                height: min(desc.preferred-height, 34px);
+                clip: true;
+
+                desc := Text {
+                    y: 0;
+                    width: parent.width;
+                    text: root.data.description;
+                    color: Theme.text-dim;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 16px;
+                height: 40px;
+                alignment: start;
+
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    y: 4px;
+                    border-radius: 16px;
+                    background: play-ta.has-hover ? Theme.text : #ffffffe6;
+                    animate background { duration: Theme.fast; }
+
+                    Icon {
+                        d: root.current && Player.playing ? Icons.pause : Icons.play;
+                        filled: true;
+                        size: 16px;
+                        color: #000000;
+                    }
+
+                    play-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Store.play-episode(root.data); }
+                    }
+                }
+
+                if root.data.explicit: Rectangle {
+                    y: 12px;
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 2px;
+                    background: Theme.text-dim;
+
+                    Text {
+                        text: "E";
+                        color: Theme.surface;
+                        font-size: 10px;
+                        font-weight: 700;
+                    }
+                }
+
+                Text {
+                    vertical-alignment: center;
+                    text: root.data.date + "  •  " + root.data.duration;
+                    color: Theme.text-dim;
+                    font-size: 14px;
+                }
+            }
+        }
+    }
+}
+
+component About inherits VerticalLayout {
+    in property <int> lines;
+    property <bool> expanded;
+    property <length> limit: root.lines * 18px;
+    property <bool> long;
+    property <length> natural: body.preferred-height;
+
+    changed natural => { root.long = root.natural > root.limit + 2px; }
+    init => { root.long = root.natural > root.limit + 2px; }
+
+    spacing: 8px;
+
+    Rectangle {
+        height: root.expanded ? body.preferred-height : min(body.preferred-height, root.limit);
+        clip: true;
+        animate height { duration: 220ms; easing: ease-out; }
+
+        body := Text {
+            y: 0;
+            width: parent.width;
+            text: Store.show.description;
+            color: Theme.text-dim;
+            font-size: 15px;
+            wrap: word-wrap;
+        }
+    }
+
+    Text {
+        height: root.long ? self.preferred-height : 0px;
+        opacity: root.long ? 1 : 0;
+        text: root.expanded ? "Show less" : "Show more";
+        color: more-ta.has-hover ? Theme.text : Theme.text-dim;
+        font-size: 14px;
+        font-weight: 700;
+        animate color { duration: Theme.fast; }
+
+        more-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.expanded = !root.expanded; }
+        }
+    }
+}
+
+export component ShowPage inherits Rectangle {
+    max-width: 100000px;
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    clip: true;
+
+    property <bool> mine: Store.show.kind == "episodes";
+    property <string> context: root.mine ? "spotify:collection:your-episodes" : Store.show.uri;
+    property <bool> playing-this: Player.context-uri != "" && Player.context-uri == root.context;
+    property <length> pad: 24px;
+    property <length> art-size: max(128px, min(232px, root.width * 0.24));
+    property <length> header-height: root.art-size + 88px;
+    property <bool> side-about: root.width > 980px && !root.mine && Store.show.description != "";
+    property <float> chars: max(4, Store.show.title.character-count);
+    property <length> title-size: max(32px, min(96px, (root.width - root.art-size - 3 * root.pad) / root.chars * 1.6));
+    property <length> scroll: scroller.offset;
+
+    scroller := Scroller {
+        content-height: page.preferred-height;
+
+        page := VerticalLayout {
+            width: parent.width;
+
+            Rectangle {
+                height: root.header-height + 104px;
+
+                Rectangle {
+                    y: 0;
+                    height: root.header-height;
+                    background: @linear-gradient(180deg, Store.show-color 0%, Store.show-color.darker(0.45) 100%);
+                    animate background { duration: 360ms; }
+                }
+
+                Rectangle {
+                    y: root.header-height;
+                    height: 232px;
+                    background: @linear-gradient(180deg, Store.show-color.darker(0.62) 0%, Theme.surface 100%);
+                    animate background { duration: 360ms; }
+                }
+
+                HorizontalLayout {
+                    x: root.pad;
+                    y: 64px;
+                    width: root.width - 2 * root.pad;
+                    height: root.art-size;
+                    spacing: 24px;
+
+                    Rectangle {
+                        width: root.art-size;
+                        border-radius: 8px;
+                        background: root.mine ? #056952 : Theme.surface-high;
+                        clip: true;
+                        drop-shadow-blur: 40px;
+                        drop-shadow-offset-y: 8px;
+                        drop-shadow-color: #00000080;
+
+                        if root.mine: Icon {
+                            d: Icons.bookmark;
+                            filled: true;
+                            size: root.art-size * 0.36;
+                            color: Theme.accent;
+                        }
+
+                        Image {
+                            width: 100%;
+                            height: 100%;
+                            source: Store.show.art;
+                            image-fit: cover;
+                            opacity: Store.show.art.width > 0 ? 1 : 0;
+                            animate opacity { duration: 300ms; }
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: end;
+                        spacing: 8px;
+
+                        Text {
+                            text: root.mine ? "Playlist" : "Podcast";
+                            color: Theme.text;
+                            font-size: 14px;
+                            font-weight: 600;
+                        }
+
+                        Text {
+                            text: Store.show.title;
+                            color: Theme.text;
+                            font-size: root.title-size;
+                            font-weight: 800;
+                            letter-spacing: -root.title-size * 0.04;
+                            overflow: elide;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            alignment: start;
+                            height: 24px;
+
+                            if root.mine: Rectangle {
+                                width: 24px;
+                                border-radius: 12px;
+                                background: #ffffff26;
+                                clip: true;
+
+                                Image {
+                                    width: 100%;
+                                    height: 100%;
+                                    source: Store.user-art;
+                                    image-fit: cover;
+                                }
+                            }
+
+                            if root.mine || Store.show.publisher != "": Text {
+                                vertical-alignment: center;
+                                text: root.mine ? Store.user-name : Store.show.publisher;
+                                color: Theme.text;
+                                font-size: root.mine ? 14px : 24px;
+                                font-weight: 700;
+                            }
+
+                            if Store.show.meta != "": Text {
+                                vertical-alignment: center;
+                                text: "•  " + Store.show.meta;
+                                color: #ffffffb3;
+                                font-size: 14px;
+                            }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    x: root.pad;
+                    y: root.header-height + 24px;
+                    width: root.width - 2 * root.pad;
+                    height: 56px;
+                    spacing: 24px;
+
+                    PlayFab {
+                        size: 56px;
+                        visible: Store.show-episodes.length > 0;
+                        playing: root.playing-this && Player.playing;
+                        clicked => { Store.play-show(); }
+                    }
+
+                    if !root.mine: Rectangle {
+                        y: 12px;
+                        height: 32px;
+                        width: follow-label.preferred-width + 30px;
+                        border-radius: 16px;
+                        border-width: 1px;
+                        border-color: follow-ta.has-hover ? Theme.text : #ffffff80;
+                        animate border-color { duration: Theme.fast; }
+
+                        follow-label := Text {
+                            text: Store.show.saved ? "Following" : "Follow";
+                            color: Theme.text;
+                            font-size: 14px;
+                            font-weight: 700;
+                        }
+
+                        follow-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Store.toggle-show-saved(); }
+                        }
+                    }
+
+                    if !root.mine: IconButton {
+                        y: 4px;
+                        width: 48px;
+                        height: 48px;
+                        icon: Icons.dots;
+                        filled: true;
+                        icon-size: 28px;
+                        clicked => {
+                            Store.card-menu({
+                                id: Store.show.id,
+                                uri: Store.show.uri,
+                                kind: "show",
+                                title: Store.show.title,
+                                image-url: Store.show.image-url,
+                                art: Store.show.art,
+                            }, self.absolute-position.x, self.absolute-position.y + self.height);
+                        }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+                }
+            }
+
+            HorizontalLayout {
+                padding-left: root.pad - 16px;
+                padding-right: root.pad;
+                padding-bottom: 32px;
+                spacing: 32px;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: start;
+
+                    if !root.side-about && !root.mine && Store.show.description != "": VerticalLayout {
+                        padding-left: 16px;
+                        padding-bottom: 24px;
+                        spacing: 12px;
+
+                        Text {
+                            text: "About";
+                            color: Theme.text;
+                            font-size: 24px;
+                            font-weight: 800;
+                            letter-spacing: -0.6px;
+                        }
+
+                        About { lines: 3; }
+                    }
+
+                    if !root.mine: Text {
+                        x: 16px;
+                        height: 48px;
+                        vertical-alignment: center;
+                        text: "All Episodes";
+                        color: Theme.text;
+                        font-size: 24px;
+                        font-weight: 800;
+                        letter-spacing: -0.6px;
+                    }
+
+                    if Store.show-loading && Store.show-episodes.length == 0: VerticalLayout {
+                        padding-left: 16px;
+                        spacing: 16px;
+                        for _ in 4: Rectangle {
+                            height: 120px;
+                            border-radius: 8px;
+                            background: Theme.tile;
+                            opacity: 0.5;
+                        }
+                    }
+
+                    if !Store.show-loading && Store.show-episodes.length == 0: Rectangle {
+                        height: 280px;
+
+                        VerticalLayout {
+                            width: parent.width;
+                            alignment: center;
+                            spacing: 12px;
+
+                            HorizontalLayout {
+                                alignment: center;
+
+                                Icon {
+                                    d: Icons.bookmark;
+                                    size: 48px;
+                                    color: Theme.text;
+                                }
+                            }
+
+                            Text {
+                                horizontal-alignment: center;
+                                text: root.mine ? "Add to Your Episodes" : "No episodes yet";
+                                color: Theme.text;
+                                font-size: 24px;
+                                font-weight: 800;
+                            }
+
+                            if root.mine: Text {
+                                horizontal-alignment: center;
+                                text: "Save episodes to this list by tapping the plus icon.";
+                                color: Theme.text-dim;
+                                font-size: 14px;
+                            }
+                        }
+                    }
+
+                    for episode in Store.show-episodes: EpisodeRow {
+                        data: episode;
+                        show-name: root.mine;
+                    }
+                }
+
+                if root.side-about: VerticalLayout {
+                    width: min(360px, root.width * 0.3);
+                    alignment: start;
+                    spacing: 12px;
+
+                    Text {
+                        text: "About";
+                        color: Theme.text;
+                        font-size: 24px;
+                        font-weight: 800;
+                        letter-spacing: -0.6px;
+                    }
+
+                    About { lines: 10; }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        y: 0;
+        height: 64px;
+        background: Store.show-color.darker(0.25);
+        opacity: max(0, min(1, (root.scroll - root.header-height + 72px) / 40px));
+
+        HorizontalLayout {
+            x: root.pad;
+            spacing: 12px;
+            alignment: start;
+
+            PlayFab {
+                y: 12px;
+                size: 40px;
+                playing: root.playing-this && Player.playing;
+                clicked => { Store.play-show(); }
+            }
+
+            Text {
+                vertical-alignment: center;
+                text: Store.show.title;
+                color: Theme.text;
+                font-size: 24px;
+                font-weight: 800;
+                letter-spacing: -0.6px;
+                overflow: elide;
+            }
+        }
+    }
+}

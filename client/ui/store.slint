@@ -1,0 +1,506 @@
+export struct CardData {
+    id: string,
+    uri: string,
+    kind: string,
+    title: string,
+    subtitle: string,
+    image-url: string,
+    art: image,
+    pinned: bool,
+}
+
+export struct SectionData {
+    eyebrow: string,
+    title: string,
+    items: [CardData],
+}
+
+export struct ArtistData {
+    id: string,
+    name: string,
+    image-url: string,
+    art: image,
+    followers: string,
+    genres: string,
+    following: bool,
+    loaded: bool,
+}
+
+export struct TrackData {
+    index: int,
+    id: string,
+    uri: string,
+    album-id: string,
+    title: string,
+    artists: string,
+    album: string,
+    added: string,
+    duration: string,
+    explicit: bool,
+    image-url: string,
+    art: image,
+}
+
+export struct ShowData {
+    id: string,
+    uri: string,
+    kind: string,
+    title: string,
+    publisher: string,
+    description: string,
+    meta: string,
+    saved: bool,
+    image-url: string,
+    art: image,
+}
+
+export struct EpisodeData {
+    id: string,
+    uri: string,
+    title: string,
+    description: string,
+    date: string,
+    duration: string,
+    explicit: bool,
+    show: string,
+    show-id: string,
+    image-url: string,
+    art: image,
+}
+
+export struct ReleaseData {
+    card: CardData,
+    date: string,
+    kind: string,
+    detail: string,
+}
+
+export struct CollectionData {
+    id: string,
+    uri: string,
+    context: string,
+    kind: string,
+    label: string,
+    title: string,
+    description: string,
+    owner: string,
+    owner-is-me: bool,
+    meta: string,
+    image-url: string,
+    art: image,
+    show-album: bool,
+    show-added: bool,
+    show-added-by: bool,
+    show-art: bool,
+    owner-id: string,
+    owner-image-url: string,
+    owner-art: image,
+}
+
+export struct PickerItem {
+    id: string,
+    kind: string,
+    title: string,
+    subtitle: string,
+    image-url: string,
+    art: image,
+    checked: bool,
+}
+
+export struct TileData {
+    key: string,
+    title: string,
+    color: color,
+    image-url: string,
+    art: image,
+}
+
+export struct LyricLine {
+    start: float,
+    end: float,
+    text: string,
+}
+
+export struct DeviceData {
+    id: string,
+    name: string,
+    kind: string,
+    active: bool,
+    current: bool,
+}
+
+export struct FriendData {
+    name: string,
+    image-url: string,
+    art: image,
+    track: string,
+    track-uri: string,
+    artist: string,
+    context: string,
+    context-uri: string,
+    ago: string,
+}
+
+export struct ProfileData {
+    id: string,
+    name: string,
+    image-url: string,
+    art: image,
+    followers: int,
+    following: int,
+    playlists: int,
+    is-me: bool,
+}
+
+export struct NamedItem {
+    id: string,
+    name: string,
+}
+
+export struct ArtistPageData {
+    id: string,
+    uri: string,
+    name: string,
+    image-url: string,
+    art: image,
+    followers: string,
+    following: bool,
+    listeners: string,
+    verified: bool,
+}
+
+export global Store {
+    in property <bool> api-online;
+    in property <bool> logged-in;
+    in property <bool> loading: true;
+    in property <string> status: "Starting…";
+    in property <string> player-status: "idle";
+    in property <string> user-name;
+    in property <string> user-initial;
+    in property <image> user-art;
+    in property <[CardData]> library;
+    in property <[CardData]> shortcuts;
+    in property <[SectionData]> sections;
+    in property <bool> has-hero;
+    in property <CardData> hero;
+    in property <string> hero-eyebrow;
+    in property <string> hero-headline;
+    in property <color> hero-color: #2a2a2a;
+    in property <color> hero-tint: #1f1f1f;
+    in property <ArtistData> artist;
+    in-out property <string> library-filter;
+    in-out property <string> home-filter: "all";
+    in property <string> page: "home";
+    in property <bool> can-back;
+    in property <bool> can-forward;
+    in property <CollectionData> collection;
+    in property <[TrackData]> tracks;
+    in property <bool> collection-loading;
+    in property <bool> collection-error;
+    in property <bool> library-missing;
+    in property <bool> library-connecting;
+    callback connect-library();
+    callback retry-collection();
+    callback edit-collection();
+    in property <color> collection-color: #3a3a3a;
+    in property <ArtistPageData> artist-page;
+    in property <[TrackData]> artist-top;
+    in property <[SectionData]> artist-shelves;
+    in property <bool> artist-loading;
+    in property <color> artist-color: #3a3a3a;
+    in-out property <string> search-query;
+    in-out property <string> search-filter: "all";
+    in-out property <SectionData> show-all;
+    in-out property <string> find-query;
+    in property <string> load-error;
+    in property <[string]> collection-footer;
+    in property <SectionData> collection-more;
+    in property <[ReleaseData]> news;
+    in property <bool> news-loading;
+    in property <string> news-filter;
+    in-out property <string> collection-query;
+    in property <string> collection-sort;
+    in-out property <string> library-query;
+    in property <string> library-sort: "Recents";
+    in property <bool> find-loading;
+    in property <[TrackData]> find-results;
+    in-out property <ShowData> show;
+    in-out property <color> show-color: #3a3a3a;
+    in-out property <bool> show-loading;
+    in-out property <[EpisodeData]> show-episodes;
+    in-out property <bool> show-all-search;
+    in property <bool> search-loading;
+    in property <bool> search-empty;
+    in property <bool> has-top;
+    in property <CardData> search-top;
+    in property <[TrackData]> search-tracks;
+    in property <[SectionData]> search-sections;
+    in property <[CardData]> search-grid;
+    in property <[TileData]> browse-tiles;
+    in property <[CardData]> recent-searches;
+    in-out property <int> focus-search-request;
+    in-out property <bool> search-focused;
+    in-out property <int> blur-search-request;
+    in property <TileData> category;
+    in property <[TrackData]> category-tracks;
+    in property <[SectionData]> category-sections;
+    in property <bool> category-loading;
+    in property <bool> needs-setup;
+    in property <string> setup-error;
+    in property <string> me-email;
+    in property <string> me-plan;
+    in property <string> me-country;
+    in property <string> client-id;
+    in property <ProfileData> profile;
+    in property <[CardData]> profile-playlists;
+    in property <[CardData]> profile-artists;
+    in property <[TrackData]> profile-tracks;
+    in property <bool> profile-loading;
+    in property <[TrackData]> history;
+    in property <bool> history-loading;
+    in-out property <bool> account-menu-open;
+    in property <string> playing-elsewhere;
+    in property <string> cache-size;
+    in property <string> app-version;
+
+    callback login();
+    callback refresh();
+    callback play-card(CardData);
+    callback open-card(CardData);
+    callback filter-library(string);
+    callback go-home();
+    callback go-back();
+    callback go-forward();
+    callback load-more();
+    callback play-collection();
+    callback play-track(TrackData);
+    callback play-artist();
+    callback play-artist-track(TrackData);
+    callback open-artist(string);
+    callback toggle-follow(string);
+    callback track-menu(TrackData, length, length);
+    callback search-edited(string);
+    callback search-filter-picked(string);
+    callback search-focus();
+    callback open-show-all(SectionData, bool);
+    callback card-menu(CardData, length, length);
+    callback app-menu(length, length);
+    callback new-playlist();
+    callback filter-home(string);
+    callback show-credits();
+    callback copy-text(string);
+    callback open-news();
+    callback filter-news(string);
+    callback find-search(string);
+    callback collection-filter(string);
+    callback collection-sort-menu(length, length);
+    callback library-search(string);
+    callback library-sort-menu(length, length);
+    callback find-add(TrackData);
+    callback play-show();
+    callback play-episode(EpisodeData);
+    callback toggle-show-saved();
+    callback open-show(string);
+    callback open-search-result(CardData);
+    callback play-search-result(CardData);
+    callback play-search-track(TrackData);
+    callback remove-recent(CardData);
+    callback clear-recent();
+    callback open-tile(TileData);
+    callback play-category-track(TrackData);
+    callback open-profile(string);
+    callback open-settings();
+    callback open-history();
+    callback logout();
+    callback open-external(string);
+    callback save-client-id(string);
+    callback clear-cache();
+    callback play-profile-track(TrackData);
+    callback play-history-track(TrackData);
+    callback transfer-here();
+}
+
+export global Prefs {
+    in-out property <bool> open-on-play: true;
+    in-out property <bool> show-friends: true;
+    in-out property <bool> minimize-on-close;
+    in-out property <bool> start-with-windows;
+    in-out property <bool> eq-on;
+    in-out property <[float]> eq-bands: [0, 0, 0, 0, 0, 0];
+    in-out property <string> eq-preset: "Flat";
+    in-out property <string> audio-level: "normal";
+    in-out property <bool> mono;
+    in-out property <string> volume-curve: "natural";
+    in-out property <int> fade;
+    in-out property <string> quality: "very_high";
+    in-out property <bool> normalize: true;
+
+    callback changed();
+    callback audio-changed();
+    callback set-band(int, float);
+    callback preset-menu(length, length);
+}
+
+export global Menu {
+    in property <bool> open;
+    in property <length> x;
+    in property <length> y;
+    in property <string> track-id;
+    in property <bool> liked;
+    in property <[NamedItem]> artists;
+    in-out property <string> sub;
+    in property <[PickerItem]> playlists;
+    in property <string> sleep;
+    in property <bool> removable;
+
+    callback action(string);
+    callback add-to(string);
+    callback search(string);
+    callback create();
+    callback close();
+}
+
+export struct MenuEntry {
+    id: string,
+    label: string,
+    icon: string,
+    separator: bool,
+    checked: bool,
+}
+
+export global ItemMenu {
+    in property <bool> open;
+    in property <length> x;
+    in property <length> y;
+    in property <string> uri;
+    in property <[MenuEntry]> entries;
+    callback pick(string);
+    callback close();
+}
+
+export global PlaylistEdit {
+    in property <bool> open;
+    in property <string> id;
+    in property <string> name;
+    in property <string> description;
+    in property <image> art;
+    in property <string> error;
+    in property <bool> busy;
+    callback save(string, string);
+    callback cancel();
+}
+
+export global Confirm {
+    in property <bool> open;
+    in property <string> title;
+    in property <string> body;
+    in property <string> action-label;
+    callback accept();
+    callback cancel();
+}
+
+export global Toast {
+    in property <string> text;
+    in property <bool> shown;
+}
+
+export global Credits {
+    in property <bool> open;
+    in property <string> title;
+    in property <[NamedItem]> artists;
+    in property <string> album;
+    in property <string> release;
+    in property <string> label;
+
+    callback close();
+}
+
+export global Picker {
+    in property <bool> open;
+    in property <[PickerItem]> saved;
+    in property <[PickerItem]> others;
+    in property <bool> dirty;
+
+    callback toggle(string);
+    callback search(string);
+    callback create();
+    callback done();
+    callback cancel();
+}
+
+export global Player {
+    in property <bool> ready;
+    in property <bool> has-track;
+    in property <bool> voice;
+    in property <bool> dj;
+    in property <string> title;
+    in property <string> artists;
+    in property <string> track-uri;
+    in property <string> track-id;
+    in property <string> context-uri;
+    in property <string> context-title;
+    in property <image> art;
+    in property <image> art-large;
+    in property <bool> explicit;
+    in property <bool> saved;
+    in property <bool> playing;
+    in property <float> position;
+    in property <float> duration;
+    in property <bool> shuffle;
+    in property <string> repeat: "off";
+    in property <float> volume: 0.7;
+
+    callback toggle();
+    callback next();
+    callback prev();
+    callback seek(float);
+    callback set-volume(float);
+    callback commit-volume(float);
+    callback toggle-shuffle();
+    callback cycle-repeat();
+    callback save-pressed();
+}
+
+export global Shell {
+    in property <bool> maximized;
+    in-out property <string> right-panel: "nowplaying";
+    in-out property <bool> library-collapsed: false;
+    in-out property <bool> library-expanded: false;
+    in property <bool> mini;
+    in property <bool> fullscreen;
+
+    callback drag();
+    callback minimize();
+    callback maximize();
+    callback close();
+    callback resize(string);
+    callback enter-mini();
+    callback exit-mini();
+    callback toggle-fullscreen();
+}
+
+export global Panels {
+    in property <[TrackData]> queue;
+    in property <TrackData> queue-now;
+    in property <bool> has-queue-now;
+    in property <[TrackData]> recent;
+    in-out property <string> queue-tab: "queue";
+    in property <bool> queue-loading;
+    in property <[DeviceData]> devices;
+    in property <bool> devices-loading;
+    in property <[FriendData]> friends;
+    in property <bool> friends-loading;
+    in property <[LyricLine]> lyrics;
+    in property <string> lyrics-state: "loading";
+    in property <bool> lyrics-synced;
+    in property <color> lyrics-color: #3a3a3a;
+    in property <string> lyrics-provider;
+
+    callback open-panel(string);
+    callback queue-tab-picked(string);
+    callback play-queue-item(TrackData, int);
+    callback play-recent(TrackData, int);
+    callback transfer(string);
+    callback open-url(string);
+    callback toggle-lyrics();
+}

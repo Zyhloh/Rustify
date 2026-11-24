@@ -1,0 +1,23 @@
+default_job = "client"
+
+[jobs.client]
+command = ["cargo", "run", "-p", "client", "--features", "dev"]
+need_stdout = true
+allow_warnings = true
+background = false
+on_change_strategy = "kill_then_restart"
+watch = ["client/src", "client/build.rs", "client/Cargo.toml"]
+default_watch = false
+
+[jobs.api]
+command = ["cargo", "run", "-p", "api"]
+need_stdout = true
+allow_warnings = true
+background = false
+on_change_strategy = "kill_then_restart"
+watch = ["api/src", "api/Cargo.toml", "config.json"]
+default_watch = false
+
+[keybindings]
+c = "job:client"
+a = "job:api"

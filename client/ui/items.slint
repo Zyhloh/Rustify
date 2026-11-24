@@ -1,0 +1,404 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { ItemMenu, PlaylistEdit, Confirm } from "store.slint";
+import { Scroller } from "components.slint";
+
+component Entry inherits Rectangle {
+    in property <string> icon;
+    in property <string> text;
+    in property <bool> checked;
+    callback clicked();
+
+    height: 40px;
+    border-radius: 2px;
+    background: ta.has-hover ? #3e3e3e : transparent;
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    if root.icon != "": Icon {
+        x: 12px;
+        d: root.icon;
+        size: 16px;
+        weight: 1.5px;
+        color: ta.has-hover ? Theme.text : #e6e6e6;
+    }
+
+    if root.checked: Icon {
+        x: root.width - 28px;
+        d: Icons.check;
+        size: 16px;
+        weight: 2px;
+        color: Theme.accent;
+    }
+
+    Text {
+        x: root.icon != "" ? 40px : 12px;
+        width: root.width - self.x - (root.checked ? 36px : 12px);
+        text: root.text;
+        color: root.checked ? Theme.accent : #ebebeb;
+        font-size: 14px;
+        font-weight: 500;
+        overflow: elide;
+    }
+}
+
+export component ItemMenuView inherits Rectangle {
+    property <length> menu-width: 260px;
+    property <length> menu-height: min(list.preferred-height, 360px);
+    property <length> mx: max(8px, min(ItemMenu.x, root.width - root.menu-width - 8px));
+    property <length> my: max(8px, min(ItemMenu.y, root.height - root.menu-height - 8px));
+
+    TouchArea {
+        clicked => { ItemMenu.close(); }
+        pointer-event(ev) => {
+            if ev.button == PointerEventButton.right && ev.kind == PointerEventKind.down {
+                ItemMenu.close();
+            }
+        }
+    }
+
+    Rectangle {
+        x: root.mx;
+        y: root.my;
+        width: root.menu-width;
+        height: root.menu-height;
+        background: #282828;
+        border-radius: 4px;
+        drop-shadow-blur: 24px;
+        drop-shadow-offset-y: 8px;
+        drop-shadow-color: #000000b3;
+        clip: true;
+
+        TouchArea { }
+
+        Scroller {
+            content-height: list.preferred-height;
+
+        list := VerticalLayout {
+            width: parent.width;
+            padding: 4px;
+
+            for entry in ItemMenu.entries: VerticalLayout {
+                if entry.separator: Rectangle {
+                    height: 9px;
+
+                    Rectangle {
+                        x: 4px;
+                        width: parent.width - 8px;
+                        height: 1px;
+                        background: #ffffff1a;
+                    }
+                }
+
+                Entry {
+                    icon: entry.icon;
+                    text: entry.label;
+                    checked: entry.checked;
+                    clicked => { ItemMenu.pick(entry.id); }
+                }
+            }
+        }
+        }
+    }
+}
+
+component Field inherits Rectangle {
+    in property <string> label;
+    in property <bool> multiline;
+    in-out property <string> text;
+    out property <bool> focused: input.has-focus;
+    callback accepted();
+    callback escaped();
+
+    public function grab() {
+        input.focus();
+        input.select-all();
+    }
+
+    border-radius: 4px;
+    background: #3e3e3e;
+    border-width: 1px;
+    border-color: input.has-focus ? #ffffff80 : transparent;
+    animate border-color { duration: Theme.fast; }
+
+    TouchArea {
+        mouse-cursor: MouseCursor.text;
+        clicked => { input.focus(); }
+    }
+
+    input := TextInput {
+        x: 12px;
+        y: root.multiline ? 12px : 0px;
+        width: root.width - 24px;
+        height: root.multiline ? root.height - 24px : root.height;
+        vertical-alignment: root.multiline ? top : center;
+        single-line: !root.multiline;
+        wrap: root.multiline ? word-wrap : no-wrap;
+        text <=> root.text;
+        color: Theme.text;
+        font-size: 14px;
+        accepted => { root.accepted(); }
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.escaped();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    if root.text == "": Text {
+        x: 12px;
+        y: root.multiline ? 12px : (root.height - self.preferred-height) / 2;
+        text: root.label;
+        color: #ffffff66;
+        font-size: 14px;
+    }
+
+    if root.focused || root.text != "": Rectangle {
+        x: 8px;
+        y: -8px;
+        width: tag.preferred-width + 8px;
+        height: 16px;
+        border-radius: 4px;
+        background: #3e3e3e;
+        opacity: root.focused ? 1 : 0;
+        animate opacity { duration: Theme.fast; }
+
+        tag := Text {
+            text: root.label;
+            color: Theme.text;
+            font-size: 11px;
+            font-weight: 700;
+        }
+    }
+}
+
+export component EditDialog inherits Rectangle {
+    background: #000000b3;
+
+    TouchArea { }
+
+    Rectangle {
+        width: min(524px, root.width - 48px);
+        height: body.preferred-height;
+        border-radius: 8px;
+        background: #282828;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #000000b3;
+        transform-scale: PlaylistEdit.open ? 1 : 0.96;
+        animate transform-scale { duration: 220ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+        TouchArea { }
+
+        body := VerticalLayout {
+            padding: 24px;
+            spacing: 16px;
+
+            HorizontalLayout {
+                Text {
+                    horizontal-stretch: 1;
+                    text: "Edit details";
+                    color: Theme.text;
+                    font-size: 24px;
+                    font-weight: 800;
+                }
+
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: close-ta.has-hover ? Theme.tile : transparent;
+
+                    close-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { PlaylistEdit.cancel(); }
+                    }
+
+                    Icon { d: Icons.close; size: 18px; color: Theme.text; }
+                }
+            }
+
+            if PlaylistEdit.error != "": Rectangle {
+                height: 36px;
+                border-radius: 4px;
+                background: #e91429;
+
+                Text {
+                    x: 12px;
+                    text: PlaylistEdit.error;
+                    color: Theme.text;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 16px;
+                height: 180px;
+
+                Rectangle {
+                    width: 180px;
+                    border-radius: 4px;
+                    background: Theme.surface-high;
+                    drop-shadow-blur: 16px;
+                    drop-shadow-color: #00000080;
+                    clip: true;
+
+                    if PlaylistEdit.art.width == 0: Icon {
+                        d: Icons.note;
+                        size: 56px;
+                        color: Theme.text-faint;
+                    }
+
+                    Image {
+                        width: 100%;
+                        height: 100%;
+                        source: PlaylistEdit.art;
+                        image-fit: cover;
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 12px;
+
+                    name := Field {
+                        height: 40px;
+                        label: "Name";
+                        text: PlaylistEdit.name;
+                        accepted => { PlaylistEdit.save(name.text, desc.text); }
+                        escaped => { PlaylistEdit.cancel(); }
+                        init => { self.grab(); }
+                    }
+
+                    desc := Field {
+                        vertical-stretch: 1;
+                        label: "Description";
+                        multiline: true;
+                        text: PlaylistEdit.description;
+                        escaped => { PlaylistEdit.cancel(); }
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                alignment: end;
+
+                Rectangle {
+                    width: save-text.preferred-width + 64px;
+                    height: 48px;
+                    border-radius: 24px;
+                    background: save-ta.has-hover ? #f0f0f0 : Theme.text;
+                    transform-scale: save-ta.pressed ? 0.97 : save-ta.has-hover ? 1.03 : 1;
+                    animate background, transform-scale { duration: Theme.fast; }
+
+                    save-text := Text {
+                        text: PlaylistEdit.busy ? "Saving…" : "Save";
+                        color: #000000;
+                        font-size: 16px;
+                        font-weight: 700;
+                    }
+
+                    save-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            if !PlaylistEdit.busy {
+                                PlaylistEdit.save(name.text, desc.text);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component ConfirmDialog inherits Rectangle {
+    background: #000000b3;
+
+    TouchArea {
+        clicked => { Confirm.cancel(); }
+    }
+
+    Rectangle {
+        width: min(420px, root.width - 48px);
+        height: body.preferred-height;
+        border-radius: 8px;
+        background: Theme.text;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #000000b3;
+        transform-scale: Confirm.open ? 1 : 0.96;
+        animate transform-scale { duration: 220ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+        TouchArea { }
+
+        body := VerticalLayout {
+            padding: 32px;
+            spacing: 12px;
+
+            Text {
+                text: Confirm.title;
+                color: #000000;
+                font-size: 24px;
+                font-weight: 800;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: Confirm.body;
+                color: #000000b3;
+                font-size: 15px;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 12px;
+                padding-top: 16px;
+
+                Rectangle {
+                    width: cancel-text.preferred-width + 48px;
+                    height: 48px;
+                    border-radius: 24px;
+                    background: cancel-ta.has-hover ? #0000000f : transparent;
+
+                    cancel-text := Text {
+                        text: "Cancel";
+                        color: #000000;
+                        font-size: 16px;
+                        font-weight: 700;
+                    }
+
+                    cancel-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Confirm.cancel(); }
+                    }
+                }
+
+                Rectangle {
+                    width: ok-text.preferred-width + 48px;
+                    height: 48px;
+                    border-radius: 24px;
+                    background: ok-ta.has-hover ? Theme.accent-hover : Theme.accent;
+                    transform-scale: ok-ta.pressed ? 0.97 : ok-ta.has-hover ? 1.03 : 1;
+                    animate transform-scale { duration: Theme.fast; }
+
+                    ok-text := Text {
+                        text: Confirm.action-label;
+                        color: #000000;
+                        font-size: 16px;
+                        font-weight: 700;
+                    }
+
+                    ok-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Confirm.accept(); }
+                    }
+                }
+            }
+        }
+    }
+}
