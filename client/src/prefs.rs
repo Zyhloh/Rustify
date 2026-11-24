@@ -9,6 +9,7 @@ pub struct Settings {
     pub open_on_play: bool,
     pub show_friends: bool,
     pub minimize_on_close: bool,
+    pub on_close: String,
     pub start_with_windows: bool,
     pub eq: bool,
     pub eq_bands: Vec<f32>,
@@ -27,6 +28,7 @@ impl Default for Settings {
             open_on_play: true,
             show_friends: true,
             minimize_on_close: false,
+            on_close: String::new(),
             start_with_windows: false,
             eq: false,
             eq_bands: vec![0.0; 6],
@@ -110,8 +112,17 @@ pub fn load(app: &App) {
     let prefs = app.global::<Prefs>();
     prefs.set_open_on_play(settings.open_on_play);
     prefs.set_show_friends(settings.show_friends);
-    prefs.set_minimize_on_close(settings.minimize_on_close);
-    prefs.set_start_with_windows(autostart_enabled());
+    let on_close = match settings.on_close.as_str() {
+        "exit" | "tray" | "taskbar" => settings.on_close.clone(),
+        _ if settings.minimize_on_close => "taskbar".into(),
+        _ => "tray".into(),
+    };
+    prefs.set_on_close(on_close.into());
+    let autostart = autostart_enabled();
+    if autostart {
+        set_autostart(true);
+    }
+    prefs.set_start_with_windows(autostart);
     let mut bands = settings.eq_bands.clone();
     bands.resize(6, 0.0);
     prefs.set_eq_bands(slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(bands))));
@@ -130,7 +141,8 @@ pub fn save(app: &App) {
     let settings = Settings {
         open_on_play: prefs.get_open_on_play(),
         show_friends: prefs.get_show_friends(),
-        minimize_on_close: prefs.get_minimize_on_close(),
+        minimize_on_close: false,
+        on_close: prefs.get_on_close().to_string(),
         start_with_windows: prefs.get_start_with_windows(),
         eq: prefs.get_eq_on(),
         eq_bands: (0..6).map(|i| prefs.get_eq_bands().row_data(i).unwrap_or(0.0)).collect(),
@@ -167,7 +179,7 @@ fn set_autostart(enabled: bool) {
     };
     if enabled {
         if let Ok(exe) = std::env::current_exe() {
-            let _ = key.set_value("Rustify", &format!("\"{}\"", exe.display()));
+            let _ = key.set_value("Rustify", &format!("\"{}\" --tray", exe.display()));
         }
     } else {
         let _ = key.delete_value("Rustify");

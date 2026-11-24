@@ -843,9 +843,16 @@ fn bind_shell(app: &App) {
     let weak = app.as_weak();
     shell.on_close(move || {
         if let Some(app) = weak.upgrade() {
-            if app.global::<crate::Prefs>().get_minimize_on_close() {
-                app.window().set_minimized(true);
-                return;
+            match app.global::<crate::Prefs>().get_on_close().as_str() {
+                "tray" => {
+                    crate::tray::hide(&app);
+                    return;
+                }
+                "taskbar" => {
+                    app.window().set_minimized(true);
+                    return;
+                }
+                _ => {}
             }
             crate::window::save(&app);
         }

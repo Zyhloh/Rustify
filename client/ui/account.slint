@@ -772,7 +772,8 @@ export component SettingsPage inherits Rectangle {
                 spacing: 12px;
                 Group { text: "Startup and window behavior"; }
                 Row {
-                    label: "Open Rustify automatically when you sign in to Windows";
+                    label: "Open Rustify on startup";
+                    note: "Starts quietly in the tray when you sign in to Windows.";
                     Switch {
                         y: 9px;
                         on: Prefs.start-with-windows;
@@ -780,11 +781,17 @@ export component SettingsPage inherits Rectangle {
                     }
                 }
                 Row {
-                    label: "Close button minimizes Rustify instead of quitting";
-                    Switch {
-                        y: 9px;
-                        on: Prefs.minimize-on-close;
-                        toggled(v) => { Prefs.minimize-on-close = v; Prefs.changed(); }
+                    label: "Close button should";
+                    note: "Minimize to tray keeps music playing with Rustify in the notification area. Right-click the tray icon to quit.";
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+                        for choice in [{ key: "tray", label: "Minimize to tray" }, { key: "taskbar", label: "Minimize to taskbar" }, { key: "exit", label: "Exit Rustify" }]: Chip {
+                            y: 4px;
+                            text: choice.label;
+                            active: Prefs.on-close == choice.key;
+                            clicked => { Prefs.on-close = choice.key; Prefs.changed(); }
+                        }
                     }
                 }
             }

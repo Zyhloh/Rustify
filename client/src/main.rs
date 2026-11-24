@@ -18,6 +18,7 @@ mod sidecar;
 mod panels;
 mod search;
 mod state;
+mod tray;
 mod window;
 
 use config::Config;
@@ -34,6 +35,9 @@ fn main() -> anyhow::Result<()> {
                 .unwrap_or_else(|_| "info,wgpu_core=error,wgpu_hal=error,naga=error".into()),
         )
         .init();
+
+    let Some(instance) = tray::acquire() else { return Ok(()) };
+    let start_hidden = std::env::args().any(|a| a == "--tray");
 
     let config = Config::load()?;
     std::thread::spawn(|| prefs::prune_image_cache(300 * 1024 * 1024));
@@ -77,7 +81,19 @@ fn main() -> anyhow::Result<()> {
         }
     });
 
-    app.run()?;
+    let _tray = tray::create();
+    let tray_timer = Timer::default();
+    let weak = app.as_weak();
+    tray_timer.start(TimerMode::Repeated, Duration::from_millis(120), move || {
+        if let Some(app) = weak.upgrade() {
+            tray::poll(&app, &instance);
+        }
+    });
+
+    if !start_hidden {
+        app.show()?;
+    }
+    slint::run_event_loop_until_quit()?;
     window::save(&app);
     runtime.shutdown_timeout(Duration::from_millis(200));
     sidecar::stop();
