@@ -35,6 +35,30 @@ pub struct Engine {
     remote_failures: std::sync::atomic::AtomicU32,
     token_pending: std::sync::atomic::AtomicBool,
     audio: std::sync::Mutex<AudioSettings>,
+    external: std::sync::Mutex<Option<External>>,
+}
+
+#[derive(Debug, Clone)]
+struct External {
+    plugin: String,
+    seq: u64,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ExternalTrack {
+    pub url: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub album: String,
+    #[serde(default)]
+    pub image: String,
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub start_ms: u32,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -121,6 +145,7 @@ impl Engine {
             remote_failures: std::sync::atomic::AtomicU32::new(0),
             token_pending: std::sync::atomic::AtomicBool::new(false),
             audio: std::sync::Mutex::new(AudioSettings::default()),
+            external: std::sync::Mutex::new(None),
         });
         tokio::spawn(Arc::clone(&engine).mirror_remote());
         engine
@@ -192,6 +217,7 @@ impl Engine {
             repeat: v.get("repeat_state").and_then(Value::as_str).unwrap_or("off").to_owned(),
             volume: v.pointer("/device/volume_percent").and_then(Value::as_u64).map(|p| p.min(100) as u8).unwrap_or(local.volume),
             context: v.pointer("/context/uri").and_then(Value::as_str).map(str::to_owned),
+            plugin_audio: None,
         };
         *self.remote_state.write().await = Some((Instant::now(), state.clone()));
         state
@@ -428,7 +454,40 @@ impl Engine {
                 "state" => {
                     self.settled();
                     let state = msg.get("state").cloned().unwrap_or(Value::Null);
+                    if self.external_plugin().is_some() {
+                        let paused = state.get("paused").and_then(Value::as_bool).unwrap_or(true);
+                        if paused {
+                            continue;
+                        }
+                        self.stop_external().await;
+                    }
                     self.apply(&state).await;
+                }
+                "external" => {
+                    if self.external_plugin().is_none() {
+                        continue;
+                    }
+                    match msg.get("event").and_then(Value::as_str).unwrap_or_default() {
+                        "state" => {
+                            let paused = msg.get("paused").and_then(Value::as_bool).unwrap_or(true);
+                            let position = msg.get("position").and_then(Value::as_u64).unwrap_or(0) as u32;
+                            let duration = msg.get("duration").and_then(Value::as_u64).unwrap_or(0) as u32;
+                            self.update(|s| {
+                                s.is_playing = !paused;
+                                s.position_ms = position;
+                                if let Some(track) = s.track.as_mut()
+                                    && duration > 0 {
+                                        track.duration_ms = duration;
+                                    }
+                            })
+                            .await;
+                        }
+                        event @ ("ended" | "next" | "previous" | "error") => {
+                            let message = msg.get("message").and_then(Value::as_str).unwrap_or_default().chars().take(200).collect();
+                            self.external_event(event, message).await;
+                        }
+                        _ => {}
+                    }
                 }
                 "error" => {
                     let kind = msg.get("kind").and_then(Value::as_str).unwrap_or_default().to_owned();
@@ -615,7 +674,83 @@ impl Engine {
             .collect()
     }
 
+    fn external_plugin(&self) -> Option<String> {
+        self.external.lock().ok().and_then(|e| e.as_ref().map(|e| e.plugin.clone()))
+    }
+
+    async fn external_event(&self, event: &str, message: String) {
+        let Some((plugin, seq)) = self.external.lock().ok().and_then(|mut e| {
+            let e = e.as_mut()?;
+            e.seq += 1;
+            Some((e.plugin.clone(), e.seq))
+        }) else {
+            return;
+        };
+        let audio = crate::models::PluginAudio { plugin, seq, event: event.into(), message };
+        self.update(|s| s.plugin_audio = Some(audio)).await;
+    }
+
+    pub async fn load_external(&self, plugin: &str, track: ExternalTrack) -> anyhow::Result<()> {
+        let same = self.external_plugin().as_deref() == Some(plugin);
+        if let Ok(mut e) = self.external.lock() {
+            let seq = e.as_ref().filter(|_| same).map(|e| e.seq).unwrap_or(0);
+            *e = Some(External { plugin: plugin.to_owned(), seq });
+        }
+        let volume = self.state.read().await.volume;
+        let gain = self.audio.lock().map(|a| a.gain(volume)).unwrap_or(volume as f32 / 100.0).min(1.0);
+        let image = (!track.image.is_empty()).then(|| track.image.clone());
+        let playing = NowPlaying {
+            id: track.id.clone(),
+            uri: format!("plugin:{plugin}:{}", track.id),
+            name: track.title.clone(),
+            artists: if track.artist.is_empty() { Vec::new() } else { vec![crate::models::ArtistRef { id: String::new(), name: track.artist.clone() }] },
+            album: track.album.clone(),
+            image_small: image.clone(),
+            image_large: image,
+            duration_ms: 0,
+            explicit: false,
+        };
+        self.update(|s| {
+            s.track = Some(playing);
+            s.context = None;
+            s.is_playing = true;
+            s.position_ms = track.start_ms;
+        })
+        .await;
+        let meta = json!({ "title": track.title, "artist": track.artist, "album": track.album, "image": track.image });
+        self.eval(format!("rustifyExternal.load({}, {}, {}, {})", json!(track.url), meta, track.start_ms, gain));
+        Ok(())
+    }
+
+    pub async fn external_command(&self, plugin: &str, action: &str, value: f64) -> anyhow::Result<()> {
+        if self.external_plugin().as_deref() != Some(plugin) {
+            anyhow::bail!("this plugin isn't playing audio");
+        }
+        match action {
+            "play" => self.eval("rustifyExternal.play()".into()),
+            "pause" => self.eval("rustifyExternal.pause()".into()),
+            "toggle" => self.eval("rustifyExternal.toggle()".into()),
+            "seek" => self.eval(format!("rustifyExternal.seek({})", value.max(0.0).round())),
+            "stop" => self.stop_external().await,
+            _ => anyhow::bail!("unknown audio action"),
+        }
+        Ok(())
+    }
+
+    pub async fn stop_external(&self) {
+        let was = self.external.lock().ok().and_then(|mut e| e.take());
+        if was.is_some() {
+            self.eval("rustifyExternal.stop()".into());
+            self.update(|s| {
+                s.is_playing = false;
+                s.plugin_audio = None;
+            })
+            .await;
+        }
+    }
+
     pub async fn play(&self, context_uri: Option<String>, uris: Vec<String>, offset: Option<String>, radio: bool) -> anyhow::Result<()> {
+        self.stop_external().await;
         let device = self.require_device().await?;
         let body = match context_uri {
             Some(track) if radio => {
@@ -655,13 +790,17 @@ impl Engine {
     }
 
     pub async fn take_staged_for_toggle(&self) -> Option<(Option<String>, String)> {
-        if self.remote().await.is_some() {
+        if self.remote().await.is_some() || self.external_plugin().is_some() {
             return None;
         }
         self.take_staged()
     }
 
     pub async fn toggle(&self) -> anyhow::Result<()> {
+        if self.external_plugin().is_some() {
+            self.eval("rustifyExternal.toggle()".into());
+            return Ok(());
+        }
         if self.remote().await.is_some() {
             let playing = self.current().await.is_playing;
             let path = if playing { "/me/player/pause" } else { "/me/player/play" };
@@ -685,6 +824,10 @@ impl Engine {
     }
 
     pub async fn pause(&self) -> anyhow::Result<()> {
+        if self.external_plugin().is_some() {
+            self.eval("rustifyExternal.pause()".into());
+            return Ok(());
+        }
         if let Some(result) = self.remote_command("PUT", "/me/player/pause", None).await {
             return result;
         }
@@ -694,6 +837,10 @@ impl Engine {
     }
 
     pub async fn next(&self) -> anyhow::Result<()> {
+        if self.external_plugin().is_some() {
+            self.external_event("next", String::new()).await;
+            return Ok(());
+        }
         if let Some(result) = self.remote_command("POST", "/me/player/next", None).await {
             return result;
         }
@@ -703,6 +850,10 @@ impl Engine {
     }
 
     pub async fn prev(&self) -> anyhow::Result<()> {
+        if self.external_plugin().is_some() {
+            self.external_event("previous", String::new()).await;
+            return Ok(());
+        }
         if let Some(result) = self.remote_command("POST", "/me/player/previous", None).await {
             return result;
         }
@@ -712,6 +863,10 @@ impl Engine {
     }
 
     pub async fn seek(&self, position_ms: u32) -> anyhow::Result<()> {
+        if self.external_plugin().is_some() {
+            self.eval(format!("rustifyExternal.seek({position_ms})"));
+            return Ok(());
+        }
         if let Some(result) = self.remote_command("PUT", &format!("/me/player/seek?position_ms={position_ms}"), None).await {
             return result;
         }
@@ -732,6 +887,7 @@ impl Engine {
         }
         let gain = self.audio.lock().map(|a| a.gain(percent)).unwrap_or(percent as f32 / 100.0);
         self.call("setVolume", &[json!(gain)]);
+        self.eval(format!("window.rustifyExternal && rustifyExternal.volume({})", gain.min(1.0)));
         if commit {
             self.update(|s| s.volume = percent).await;
         } else {

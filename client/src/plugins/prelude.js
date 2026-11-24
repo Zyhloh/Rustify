@@ -382,12 +382,142 @@
     clear: () => call("storage.clear", null),
   };
 
+
+  const makeResponse = raw => {
+    const status = Number(raw.status) || 0;
+    const body = String(raw.body ?? "");
+    const headers = new Map(Object.entries(raw.headers || {}).map(([k, v]) => [k.toLowerCase(), String(v)]));
+    return Object.freeze({
+      ok: status >= 200 && status < 300,
+      status,
+      statusText: String(raw.statusText || ""),
+      url: String(raw.url || ""),
+      headers: Object.freeze({ get: name => headers.get(String(name).toLowerCase()) ?? null, has: name => headers.has(String(name).toLowerCase()) }),
+      text: () => Promise.resolve(body),
+      json: () => Promise.resolve().then(() => JSON.parse(body)),
+    });
+  };
+
+  const netFetch = (input, init = {}) => {
+    const url = typeof input === "string" ? input : String((input && input.url) || input);
+    let headers = init.headers || {};
+    if (headers && typeof headers.forEach === "function" && !Array.isArray(headers)) {
+      const plain = {};
+      headers.forEach((v, k) => (plain[k] = v));
+      headers = plain;
+    } else if (Array.isArray(headers)) headers = Object.fromEntries(headers);
+    const body = init.body === undefined || init.body === null ? undefined : typeof init.body === "string" ? init.body : JSON.stringify(init.body);
+    return callAsync("net.fetch", { url, method: init.method || "GET", headers, body }).then(makeResponse);
+  };
+
+  const selfId = call("info", null).plugin;
+  const ownsTrack = () => !!(state.track && String(state.track.uri || "").startsWith("plugin:" + selfId + ":"));
+  const audioListeners = new Map();
+  const audioEmit = (event, data) => {
+    for (const cb of [...(audioListeners.get(event) || [])]) {
+      try {
+        cb(data);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+  on("audio", event => event && audioEmit(event.event, event));
+
+  const AudioApi = Object.freeze({
+    load: track => call("audio", { action: "load", track: track || {} }),
+    play: () => call("audio", { action: "play" }),
+    pause: () => call("audio", { action: "pause" }),
+    toggle: () => call("audio", { action: "toggle" }),
+    seek: ms => call("audio", { action: "seek", value: Math.max(0, Number(ms) || 0) }),
+    stop: () => call("audio", { action: "stop" }),
+    get playing() {
+      return ownsTrack() && state.isPlaying;
+    },
+    get position() {
+      return state.position;
+    },
+    get duration() {
+      return state.duration;
+    },
+    on: (event, cb) => {
+      if (typeof cb !== "function") return () => {};
+      if (!audioListeners.has(event)) audioListeners.set(event, new Set());
+      audioListeners.get(event).add(cb);
+      return () => audioListeners.get(event)?.delete(cb);
+    },
+  });
+
+  class AudioElement {
+    constructor(src) {
+      this.src = src || "";
+      this.title = "";
+      this.artist = "";
+      this.album = "";
+      this.artwork = "";
+      this.listeners = new Map();
+      this.paused = true;
+      this.loaded = "";
+      AudioApi.on("ended", () => this.fire("ended"));
+      AudioApi.on("error", e => this.fire("error", e));
+      on("state", () => {
+        if (!this.loaded || !ownsTrack()) return;
+        const was = this.paused;
+        this.paused = !state.isPlaying;
+        if (was !== this.paused) this.fire(this.paused ? "pause" : "play");
+        this.fire("timeupdate");
+      });
+    }
+    get currentTime() {
+      return (state.position || 0) / 1000;
+    }
+    set currentTime(seconds) {
+      AudioApi.seek((Number(seconds) || 0) * 1000);
+    }
+    get duration() {
+      return state.duration ? state.duration / 1000 : NaN;
+    }
+    addEventListener(type, cb) {
+      if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+      this.listeners.get(type).add(cb);
+    }
+    removeEventListener(type, cb) {
+      this.listeners.get(type)?.delete(cb);
+    }
+    fire(type, detail) {
+      for (const cb of [...(this.listeners.get(type) || [])]) {
+        try {
+          cb({ type, target: this, detail });
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      const handler = this["on" + type];
+      if (typeof handler === "function") handler.call(this, { type, target: this, detail });
+    }
+    play() {
+      if (this.loaded !== this.src) {
+        this.loaded = this.src;
+        AudioApi.load({ url: this.src, title: this.title, artist: this.artist, album: this.album, image: this.artwork });
+      } else AudioApi.play();
+      return Promise.resolve();
+    }
+    pause() {
+      AudioApi.pause();
+    }
+    load() {
+      this.loaded = "";
+    }
+  }
+
   const Rustify = Object.freeze({
     version: call("info", null).version,
     plugin: call("info", null).plugin,
     Player: Object.freeze(Player),
     Storage: Object.freeze(Storage),
     Spotify: Object.freeze({ get: path => callAsync("spotify.get", { path: String(path) }) }),
+    fetch: netFetch,
+    Audio: AudioApi,
     UI: Object.freeze({
       Topbar: Object.freeze({ Button: controls("topbar", "ui.topbar") }),
       Playbar: Object.freeze({ Button: controls("playbar", "ui.playbar") }),
@@ -574,10 +704,7 @@
 
   globalThis.__emit = (type, json) => {
     const data = json ? JSON.parse(json) : null;
-    if (type === "state") {
-      state = data;
-      return;
-    }
+    if (type === "state") state = data;
     for (const cb of [...(listeners.get(type) || [])]) {
       try {
         cb(data);
@@ -620,6 +747,8 @@
   globalThis.localStorage = localStore;
   globalThis.navigator = Object.freeze({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Rustify", platform: "Win32", language: "en-US" });
   globalThis.window = globalThis;
+  globalThis.fetch = netFetch;
+  globalThis.Audio = AudioElement;
 
   Object.defineProperty(globalThis, "Rustify", { value: Rustify, writable: false, configurable: false });
   Object.defineProperty(globalThis, "Spicetify", { value: Object.freeze(Spicetify), writable: false, configurable: false });

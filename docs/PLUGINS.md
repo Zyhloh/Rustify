@@ -68,7 +68,8 @@ Complete examples live in [`examples/plugins`](../examples/plugins): `now-playin
 | `homepage` | no | `https://` link to a website. |
 | `icon` | no | A `.png` or `.jpg` in the folder, up to 256 KB. Square, 256 by 256 works best. Without one, Rustify draws a letter tile. |
 | `main` | no | Script file name inside the folder. Defaults to `index.js`. Themes can't have one. |
-| `permissions` | no | Any of `player`, `spotify`, `theme`. |
+| `permissions` | no | Any of `player`, `spotify`, `theme`, `network`, `audio`. |
+| `network` | no | Websites the plugin talks to, like `["api.example.com"]`. Subdomains are included. Required with `network` or `audio`. |
 | `theme` | no | Colors. Required for themes. A plugin needs the `theme` permission to use it. See [Themes](#themes). |
 
 Unknown fields are rejected so typos are caught early. Links must be `https://`. The manifest may be up to 64 KB and the script up to 512 KB.
@@ -80,6 +81,8 @@ Unknown fields are rejected so typos are caught early. Links must be `https://`.
 | `player` | Playback control: play, pause, skip, seek, volume, shuffle, repeat. |
 | `spotify` | Read-only requests to the Spotify Web API (`GET /v1/...`) with the user's account. |
 | `theme` | Changing Rustify's colors. |
+| `network` | HTTPS requests to the websites listed in `network`. |
+| `audio` | Playing audio streams from the websites listed in `network` through Rustify's player. |
 
 Everything else needs no permission: reading the current playback state, buttons, menu items, pages, storage, notifications, timers and navigation.
 
@@ -205,6 +208,51 @@ const data = await Rustify.Spotify.get("/v1/me/top/tracks?limit=10");
 ```
 
 Needs the `spotify` permission. Only `GET` requests to `/v1/...` are allowed. Requests go through Rustify's API layer, so they share its rate limit handling and token refresh. A plugin can make 30 requests per minute.
+
+### Internet
+
+```js
+const res = await fetch("https://api.example.com/songs?q=lucid", { headers: { "X-Api-Key": key } });
+const data = await res.json();
+```
+
+Needs the `network` permission. `fetch` and `Rustify.fetch` work like the browser's: `method`, `headers` and `body` are supported, and the response has `ok`, `status`, `headers.get()`, `text()` and `json()`.
+
+- Only `https://` addresses on the websites in the manifest's `network` list, on the default port.
+- Addresses that point to the user's own computer or local network are refused, even through DNS tricks or redirects.
+- Redirects are followed only within the listed websites.
+- Cookies are never sent or stored. `Cookie`, `Authorization`, `Host`, `Origin` and `Referer` headers are dropped.
+- Requests time out after 20 seconds. Bodies are limited to 1 MB going out and 5 MB coming back.
+- 120 requests per minute.
+
+### Audio
+
+```js
+Rustify.Audio.load({
+  url: "https://cdn.example.com/track.mp3",
+  title: "Song name",
+  artist: "Artist",
+  album: "Album",
+  image: "https://cdn.example.com/cover.jpg",
+  id: "track-42",
+  start: 0,
+});
+Rustify.Audio.on("ended", () => playNext());
+Rustify.Audio.on("next", () => playNext());
+Rustify.Audio.on("previous", () => playPrevious());
+Rustify.Audio.on("error", e => console.error(e.message));
+```
+
+Needs the `audio` permission, and the stream must be on a website in `network`. The track plays through Rustify's own player:
+
+- The player bar, now-playing view, full screen and miniplayer show it, with its title, artist and cover.
+- Play/pause, seeking, volume, media keys and the Windows media overlay work. The equalizer and volume normalization apply when the server allows cross-origin audio.
+- Spotify pauses while plugin audio plays. Starting anything from Spotify stops the plugin's audio.
+- Rustify can't know your playlist, so Next and Previous (buttons and media keys) are sent to the plugin as `next` and `previous` events. Load the next track yourself.
+
+Also available: `play()`, `pause()`, `toggle()`, `seek(ms)`, `stop()`, and `playing`, `position` and `duration`. Code written for the browser's `new Audio(url)` also works: `play()`, `pause()`, `currentTime`, `duration`, `paused` and the `play`, `pause`, `timeupdate`, `ended` and `error` events. Set `title`, `artist` and `artwork` on it to show them in the player bar.
+
+The current track's URI is `plugin:<your id>:<track id>`, so `Rustify.Player.data` and events tell you when your audio is playing.
 
 ### Storage
 
@@ -361,7 +409,8 @@ Rustify provides a `Spicetify` global that covers the commonly used extension AP
 | `Spicetify.Platform.ClipboardAPI.copy` | Supported, at most once a second |
 | `Spicetify.Platform.PlayerAPI` (`pause`, `resume`, `skipToNext`, `skipToPrevious`, `seekTo`) | Supported, needs `player` |
 | `Spicetify.Locale.get`, `Spicetify.Config`, `localStorage`, `navigator.userAgent`, `window` | Provided. `localStorage` is the plugin's own storage |
-| `ReactDOM.render` into the page, `document`, CSS injection, `fetch`, `<audio>` | Not available. Use pages, sections and dialogs for UI. Plugins can't reach the internet or play their own audio |
+| `fetch`, `new Audio()` | Supported with the `network` and `audio` permissions. See [Internet](#internet) and [Audio](#audio) |
+| `ReactDOM.render` into the page, `document`, CSS injection, `AudioContext` | Not available. Use pages, sections and dialogs for UI |
 | `CosmosAsync.post/put/del`, `Platform` internals | Not available |
 
 [`examples/plugins/spicetify-song-info`](../examples/plugins/spicetify-song-info) is a Spicetify extension that runs unchanged. It uses the usual wait loop, `Topbar.Button`, `ContextMenu.Item`, `LocalStorage`, `CosmosAsync.get` and `URI`, and only adds a `manifest.json`. Rustify's tests run it on every build.
@@ -375,7 +424,7 @@ Typical port:
 
 ## Limits and sandbox
 
-Plugins can only reach what the `Rustify` API exposes. They have no file system, network, process or DOM access, and they cannot see other plugins.
+Plugins can only reach what the `Rustify` API exposes. They have no file system, process or DOM access, they cannot see other plugins, and they can only reach the internet with the `network` permission, on the websites they list.
 
 | Limit | Value |
 | --- | --- |
@@ -384,6 +433,8 @@ Plugins can only reach what the `Rustify` API exposes. They have no file system,
 | Stuck callbacks before the plugin is turned off | 3 |
 | UI updates | 120 per second |
 | Spotify requests | 30 per minute |
+| Internet requests | 120 per minute, 20 s timeout, 1 MB up and 5 MB down |
+| Websites in `network` | 20 |
 | Notifications | 1 every 2 seconds |
 | Timers | 100 active |
 | Storage | 1 MB |

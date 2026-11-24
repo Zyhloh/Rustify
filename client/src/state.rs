@@ -365,6 +365,10 @@ pub fn apply_player(app: &App, state: &models::PlayerState) -> Option<TrackChang
     player.set_voice(voice);
     player.set_dj(state.context.as_deref() == Some("spotify:playlist:37i9dQZF1EYkqdzj48dyYq") || voice);
     player.set_duration(track.duration_ms as f32);
+    if track.uri.starts_with("plugin:") && !player.get_context_uri().is_empty() {
+        player.set_context_uri("".into());
+        player.set_context_title("".into());
+    }
     if let Some(context) = state.context.as_deref()
         && (player.get_context_uri() != context || player.get_context_title().is_empty()) {
             match library_title(context) {

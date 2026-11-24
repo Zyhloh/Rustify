@@ -127,8 +127,11 @@ pub fn review(m: &Manifest, script: &str) -> Report {
         if compact.contains("while(true)") || compact.contains("while(1)") || compact.contains("for(;;)") {
             report.add(Level::Review, "Has a loop that never ends on its own, which can freeze it. Rustify stops plugins that hang.");
         }
-        if calls(script, "fetch") || script.contains("XMLHttpRequest") || script.contains("WebSocket") {
-            report.add(Level::Review, "Tries to connect to the internet. Rustify blocks this, but ask the author why.");
+        if !has("network") && (calls(script, "fetch") || script.contains("XMLHttpRequest") || script.contains("WebSocket")) {
+            report.add(Level::Review, "Tries to connect to the internet without asking. Rustify blocks this, but ask the author why.");
+        }
+        if !m.network.is_empty() {
+            report.add(Level::Note, format!("Connects to {}.", m.network.join(", ")));
         }
         if script.contains("document.") || script.contains("React.") || script.contains("ReactDOM") {
             report.add(Level::Note, "Uses browser page features that Rustify doesn't have. Those parts won't work.");

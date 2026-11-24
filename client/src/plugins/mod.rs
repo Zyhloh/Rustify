@@ -2,6 +2,7 @@ mod host;
 mod install;
 mod library;
 pub mod manifest;
+mod net;
 mod review;
 #[cfg(test)]
 mod bench;
@@ -81,6 +82,7 @@ struct State {
     open_page: Option<(String, String)>,
     last_state: Option<String>,
     last_track: String,
+    last_audio: Option<(String, u64)>,
     last_playing: Option<bool>,
     query: String,
     tab: String,
@@ -167,11 +169,16 @@ pub fn install(app: &App, ctx: &Ctx) {
     });
     let api = ctx.api.clone();
     let rt = ctx.rt.clone();
-    let fetch: host::Fetch = Arc::new(move |path, done| {
+    let fetch: host::Fetch = Arc::new(move |request, done| {
         let api = api.clone();
         rt.spawn(async move {
-            let url = format!("/plugin/spotify?path={}", crate::ctx::url_encode(&path));
-            let result = api.get::<Value>(&url).await.map(|v| v.to_string()).map_err(|e| e.to_string());
+            let result = match request {
+                host::Request::Spotify(path) => {
+                    let url = format!("/plugin/spotify?path={}", crate::ctx::url_encode(&path));
+                    api.get::<Value>(&url).await.map(|v| v.to_string()).map_err(|e| e.to_string())
+                }
+                host::Request::Net { url, method, headers, body, hosts } => net::fetch(url, method, headers, body, hosts).await,
+            };
             done(result);
         });
     });
@@ -264,6 +271,10 @@ fn activate(app: &App, m: manifest::Manifest, script: String) {
 }
 
 fn deactivate(id: &str) {
+    let owns_audio = STATE.with(|s| s.borrow().last_track.starts_with(&format!("plugin:{id}:")));
+    if owns_audio {
+        post_audio(json!({ "plugin": id, "action": "stop" }));
+    }
     STATE.with(|s| {
         let mut s = s.borrow_mut();
         s.running.remove(id);
@@ -306,7 +317,7 @@ pub fn sync(app: &App) {
             if unchanged && (s.running.contains(&m.id) || s.errors.contains_key(&m.id)) {
                 continue;
             }
-            let widened = prev.is_some_and(|p| m.permissions.iter().any(|x| !p.permissions.contains(x)));
+            let widened = prev.is_some_and(|p| m.permissions.iter().any(|x| !p.permissions.contains(x)) || m.network.iter().any(|h| !p.network.contains(h)));
             let riskier = before.is_some_and(|o| f.review.level() > o.review.level());
             if widened || riskier {
                 needs_approval.push((m.id.clone(), widened));
@@ -438,6 +449,12 @@ pub fn pending_enable(id: &str) -> Option<EnableAsk> {
             Kind::Plugin if m.permissions.is_empty() => format!(
                 "{} by {author} will run inside Rustify. It can add buttons, menu items and pages, but doesn't ask for any special permissions. Only turn on plugins you trust.",
                 m.name
+            ),
+            Kind::Plugin if !m.network.is_empty() => format!(
+                "{} by {author} will run inside Rustify. It can {}. It connects to {}. Only turn on plugins you trust.",
+                m.name,
+                library::lower_first(&library::permissions_text(&m.permissions)),
+                m.network.join(", ")
             ),
             Kind::Plugin => format!(
                 "{} by {author} will run inside Rustify. It can {}. Only turn on plugins you trust.",
@@ -573,6 +590,26 @@ fn retain<T: Clone + 'static>(model: &VecModel<T>, keep: impl Fn(&T) -> bool) {
 fn refresh(app: &App) {
     library::refresh(app);
     sync_hidden(app);
+    let hosts: Vec<String> = STATE.with(|s| {
+        let s = s.borrow();
+        s.found
+            .iter()
+            .filter_map(|f| f.manifest.as_ref())
+            .filter(|m| s.running.contains(&m.id) && m.permissions.iter().any(|p| p == "audio"))
+            .flat_map(|m| m.network.iter().cloned())
+            .collect()
+    });
+    crate::images::set_plugin_hosts(hosts);
+}
+
+fn post_audio(body: Value) {
+    let Some(ctx) = STATE.with(|s| s.borrow().ctx.clone()) else { return };
+    let api = ctx.api.clone();
+    ctx.rt.spawn(async move {
+        if let Err(e) = api.post("/plugin/audio", body).await {
+            tracing::warn!("plugin audio: {e}");
+        }
+    });
 }
 
 fn theme_get(theme: &Theme, key: &str) -> Color {
@@ -716,6 +753,7 @@ fn apply(app: &App, op: UiOp) {
     let mut dirty = false;
     let mut themes = false;
     let mut navigate = None;
+    let mut audio = None;
     STATE.with(|s| {
         let mut s = s.borrow_mut();
         match op {
@@ -809,6 +847,10 @@ fn apply(app: &App, op: UiOp) {
                     rebuild_sections(&s);
                 }
             }
+            UiOp::Audio { plugin, mut payload } => {
+                payload["plugin"] = json!(plugin);
+                audio = Some(payload);
+            }
             UiOp::Clipboard { plugin, text } => {
                 log(&s, &plugin, "info", "copied text to the clipboard");
                 crate::menu::copy(app, &text, "Copied to clipboard");
@@ -868,6 +910,9 @@ fn apply(app: &App, op: UiOp) {
             }
         }
     });
+    if let Some(payload) = audio {
+        post_audio(payload);
+    }
     if themes {
         reset_theme(app);
         reapply_themes(app);
@@ -997,6 +1042,19 @@ pub fn player_state(state: &crate::models::PlayerState) {
     })
     .to_string();
     let track_id = state.track.as_ref().map(|t| t.uri.clone()).unwrap_or_default();
+    if let Some(audio) = &state.plugin_audio {
+        let fresh = STATE.with(|s| {
+            let mut s = s.borrow_mut();
+            let key = (audio.plugin.clone(), audio.seq);
+            let fresh = s.last_audio.as_ref() != Some(&key);
+            s.last_audio = Some(key);
+            fresh
+        });
+        if fresh {
+            let event = json!({ "event": audio.event, "message": audio.message }).to_string();
+            send(Cmd::EmitTo(audio.plugin.clone(), "audio".into(), event));
+        }
+    }
     let (running, changed, toggled) = STATE.with(|s| {
         let mut s = s.borrow_mut();
         let changed = s.last_track != track_id;

@@ -39,7 +39,7 @@ function push(s) {
 }
 
 function describe(s, t) {
-  if (!("mediaSession" in navigator)) return;
+  if (!("mediaSession" in navigator) || external.active) return;
   try {
     if (t) {
       const images = ((t.album && t.album.images) || []).filter(i => i && i.url);
@@ -60,18 +60,114 @@ function describe(s, t) {
 function bindMediaKeys() {
   if (!("mediaSession" in navigator)) return;
   const actions = {
-    play: () => player.resume(),
-    pause: () => player.pause(),
-    nexttrack: () => player.nextTrack(),
-    previoustrack: () => player.previousTrack(),
-    seekto: d => player.seek(Math.round(d.seekTime * 1000)),
+    play: () => (external.active ? external.play() : player.resume()),
+    pause: () => (external.active ? external.pause() : player.pause()),
+    nexttrack: () => (external.active ? send({ type: "external", event: "next" }) : player.nextTrack()),
+    previoustrack: () => (external.active ? send({ type: "external", event: "previous" }) : player.previousTrack()),
+    seekto: d => (external.active ? external.seek(d.seekTime * 1000) : player.seek(Math.round(d.seekTime * 1000))),
   };
   for (const [action, run] of Object.entries(actions)) {
     try {
-      navigator.mediaSession.setActionHandler(action, d => player && Promise.resolve(run(d)).catch(() => {}));
+      navigator.mediaSession.setActionHandler(action, d => (external.active || player) && Promise.resolve(run(d)).catch(() => {}));
     } catch (_) {}
   }
 }
+
+const external = (() => {
+  let audio = null;
+  let active = false;
+  let last = 0;
+  let pending = null;
+  let level = 0.7;
+  const report = force => {
+    if (!active || !audio) return;
+    const now = Date.now();
+    if (!force && now - last < 900) return;
+    last = now;
+    send({
+      type: "external",
+      event: "state",
+      paused: audio.paused,
+      position: Math.round((audio.currentTime || 0) * 1000),
+      duration: isFinite(audio.duration) ? Math.round(audio.duration * 1000) : 0,
+    });
+  };
+  const make = cors => {
+    const el = new Audio();
+    el.preload = "auto";
+    if (cors) el.crossOrigin = "anonymous";
+    else el.__rustify = true;
+    for (const e of ["play", "pause", "loadedmetadata", "seeked"]) el.addEventListener(e, () => el === audio && report(true));
+    el.addEventListener("timeupdate", () => el === audio && report(false));
+    el.addEventListener("ended", () => {
+      if (el !== audio) return;
+      report(true);
+      send({ type: "external", event: "ended" });
+    });
+    el.addEventListener("error", () => {
+      if (el !== audio || !active) return;
+      if (cors && pending) {
+        const retry = pending;
+        pending = null;
+        start(false, retry);
+        return;
+      }
+      const code = el.error ? el.error.code : 0;
+      send({ type: "external", event: "error", message: ["", "aborted", "network error", "can't decode this audio", "unsupported audio or address"][code] || "playback failed" });
+    });
+    el.addEventListener("playing", () => el === audio && (pending = null));
+    return el;
+  };
+  const start = (cors, job) => {
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+    const el = make(cors);
+    audio = el;
+    pending = cors ? job : null;
+    el.src = job.src;
+    el.volume = level;
+    if (job.start > 0) el.currentTime = job.start / 1000;
+    el.play().catch(e => {
+      if (el !== audio || (cors && pending)) return;
+      if (e && e.name === "AbortError") return;
+      send({ type: "external", event: "error", message: String((e && e.message) || e) });
+    });
+  };
+  return {
+    load(src, meta, startMs, volume) {
+      active = true;
+      level = Math.max(0, Math.min(1, volume));
+      if (player) Promise.resolve(player.pause()).catch(() => {});
+      start(true, { src, start: startMs });
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: meta.title || "", artist: meta.artist || "", album: meta.album || "", artwork: meta.image ? [{ src: meta.image }] : [] });
+      } catch (_) {}
+    },
+    play() { if (active && audio) audio.play().catch(() => {}); },
+    pause() { if (active && audio) audio.pause(); },
+    toggle() { if (active && audio) (audio.paused ? audio.play().catch(() => {}) : audio.pause()); },
+    seek(ms) { if (active && audio) audio.currentTime = Math.max(0, ms) / 1000; },
+    volume(v) {
+      level = Math.max(0, Math.min(1, v));
+      if (audio) audio.volume = level;
+    },
+    stop() {
+      active = false;
+      pending = null;
+      if (audio) {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+      }
+    },
+    get active() { return active; },
+  };
+})();
+
+window.rustifyExternal = external;
 
 window.rustify = {
   token(t) {

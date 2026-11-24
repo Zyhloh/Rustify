@@ -13,6 +13,8 @@ pub fn permissions_text(perms: &[String]) -> String {
             "player" => "control playback",
             "spotify" => "read your Spotify data",
             "theme" => "change Rustify's colors",
+            "network" => "connect to the websites it lists",
+            "audio" => "play audio from the websites it lists",
             _ => "unknown",
         })
         .collect();
@@ -42,12 +44,19 @@ fn access(m: &manifest::Manifest) -> Vec<SharedString> {
                 "player" => "Control playback: play, pause, skip, seek, volume, shuffle and repeat",
                 "spotify" => "Read your Spotify account data through the Web API, such as playlists and top tracks. It can't change anything",
                 "theme" => "Change Rustify's colors",
+                "network" => "Send and receive data from the websites listed below",
+                "audio" => "Play audio from the websites listed below through Rustify's player",
                 _ => continue,
             }
             .into(),
         );
     }
-    out.push("No access to your files, other apps or the internet".into());
+    if m.network.is_empty() {
+        out.push("No access to your files, other apps or the internet".into());
+    } else {
+        out.push(format!("Websites: {}", m.network.join(", ")).into());
+        out.push("No access to your files, other apps or your local network".into());
+    }
     out
 }
 

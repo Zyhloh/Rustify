@@ -50,6 +50,7 @@ Plugins are plain JavaScript running in a sandboxed engine inside the app. They 
 - hide built-in buttons they replace
 - react to song changes, play and pause, and progress
 - control playback, read Spotify Web API data and keep their own settings
+- with permission, talk to their own web services and play audio streams through Rustify's player
 
 Themes recolor the whole app and switch instantly. They're colors only and can't run code.
 
@@ -65,7 +66,7 @@ Install add-ons from a `.zip`, from a GitHub link, by dragging a file or folder 
 
 Every add-on gets a safety check before you turn it on. Rustify looks for hidden or encoded code, internet access, profile reads and actions taken without you clicking, and archives containing programs are refused. Each add-on's page lists exactly what it can do, its findings, the Spotify data it asks for, and links to its author and source code.
 
-Each plugin runs in its own engine with memory and time limits, permission checks and rate limits. A broken plugin is stopped without affecting the app.
+Each plugin runs in its own engine with memory and time limits, permission checks and rate limits. Internet access is limited to the websites a plugin lists, which you see before turning it on, and never reaches your local network. A broken plugin is stopped without affecting the app.
 
 Many Spicetify extensions run with only a `manifest.json` added: `Spicetify.Player`, `ContextMenu.Item`, `Topbar.Button`, `Playbar.Button`, `LocalStorage`, `showNotification`, `CosmosAsync.get` and `URI` are provided. The repository includes one that runs unchanged.
 

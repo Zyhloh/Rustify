@@ -88,6 +88,17 @@ pub struct PlayerState {
     pub volume: u8,
     #[serde(default)]
     pub context: Option<String>,
+    #[serde(default)]
+    pub plugin_audio: Option<PluginAudio>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct PluginAudio {
+    pub plugin: String,
+    pub seq: u64,
+    pub event: String,
+    #[serde(default)]
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

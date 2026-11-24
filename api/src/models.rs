@@ -89,6 +89,16 @@ pub struct PlayerState {
     pub repeat: String,
     pub volume: u8,
     pub context: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_audio: Option<PluginAudio>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PluginAudio {
+    pub plugin: String,
+    pub seq: u64,
+    pub event: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -1,7 +1,8 @@
 use serde::Deserialize;
 use std::{collections::BTreeMap, path::Path};
 
-pub const PERMISSIONS: [&str; 3] = ["player", "spotify", "theme"];
+pub const PERMISSIONS: [&str; 5] = ["player", "spotify", "theme", "network", "audio"];
+const MAX_HOSTS: usize = 20;
 const MAX_SCRIPT: u64 = 512 * 1024;
 pub const MAX_ICON: u64 = 256 * 1024;
 
@@ -36,6 +37,7 @@ pub struct Manifest {
     pub main: String,
     pub permissions: Vec<String>,
     pub theme: BTreeMap<String, String>,
+    pub network: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -74,6 +76,8 @@ struct Raw {
     permissions: Vec<String>,
     #[serde(default)]
     theme: BTreeMap<String, String>,
+    #[serde(default)]
+    network: Vec<String>,
 }
 
 pub fn valid_id(id: &str) -> bool {
@@ -106,6 +110,31 @@ pub fn valid_link(url: &str) -> bool {
         && !host.contains('@')
         && !host.contains(':')
         && url.chars().all(|c| c.is_ascii_alphanumeric() || "-._~:/?#[]!$&()*+,;=%".contains(c))
+}
+
+pub fn valid_host(host: &str) -> bool {
+    let lower = host.to_ascii_lowercase();
+    (4..=100).contains(&host.len())
+        && host == lower
+        && host.contains('.')
+        && !host.starts_with('.')
+        && !host.ends_with('.')
+        && !host.contains("..")
+        && host.parse::<std::net::IpAddr>().is_err()
+        && !host.split('.').next_back().is_some_and(|tld| tld.bytes().all(|b| b.is_ascii_digit()))
+        && !["localhost", "local", "internal", "lan", "home", "arpa"].iter().any(|t| host == *t || host.ends_with(&format!(".{t}")))
+        && host.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.')
+}
+
+pub fn host_allowed(hosts: &[String], url: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(url) else { return false };
+    let Some(host) = parsed.host_str().map(str::to_ascii_lowercase) else { return false };
+    parsed.scheme() == "https"
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && parsed.port().is_none()
+        && url.len() <= 2000
+        && hosts.iter().any(|h| host == *h || host.ends_with(&format!(".{h}")))
 }
 
 pub fn link_label(url: &str) -> String {
@@ -197,6 +226,25 @@ pub fn parse(raw: &[u8], folder: &str) -> Result<Manifest, String> {
     };
     permissions.sort();
     permissions.dedup();
+    let mut network: Vec<String> = raw.network.iter().map(|h| h.trim().to_ascii_lowercase()).collect();
+    network.sort();
+    network.dedup();
+    if let Some(bad) = network.iter().find(|h| !valid_host(h)) {
+        return Err(format!("\"{bad}\" in network isn't a public website name like api.example.com"));
+    }
+    if network.len() > MAX_HOSTS {
+        return Err(format!("network can list at most {MAX_HOSTS} websites"));
+    }
+    let has = |p: &str| permissions.iter().any(|x| x == p);
+    if !network.is_empty() && !has("network") && !has("audio") {
+        return Err("websites in \"network\" need the \"network\" or \"audio\" permission".into());
+    }
+    if (has("network") || has("audio")) && network.is_empty() {
+        return Err("list the websites this plugin connects to in \"network\"".into());
+    }
+    if kind == Kind::Theme && !network.is_empty() {
+        return Err("themes can't connect to the internet".into());
+    }
     let (author, author_url) = match raw.author {
         None => (String::new(), String::new()),
         Some(Author::Name(name)) => (name, String::new()),
@@ -224,6 +272,7 @@ pub fn parse(raw: &[u8], folder: &str) -> Result<Manifest, String> {
         main,
         permissions,
         theme: raw.theme,
+        network,
     };
     if manifest.name.is_empty() {
         return Err("name is required".into());
@@ -297,6 +346,35 @@ mod tests {
         assert!(!valid_link("https://github.com/a\"b"));
         assert!(!valid_link("https://localhost/"));
         assert_eq!(link_label("https://www.github.com/someone/plugin/"), "github.com/someone/plugin");
+    }
+
+    #[test]
+    fn network_hosts() {
+        assert!(valid_host("api.example.com"));
+        assert!(!valid_host("localhost"));
+        assert!(!valid_host("printer.local"));
+        assert!(!valid_host("127.0.0.1"));
+        assert!(!valid_host("10.0.0.1"));
+        assert!(!valid_host("API.example.com"));
+        assert!(!valid_host("evil.com/path"));
+        let hosts = vec!["example.com".to_owned()];
+        assert!(host_allowed(&hosts, "https://api.example.com/a?b=1"));
+        assert!(host_allowed(&hosts, "https://example.com/a"));
+        assert!(!host_allowed(&hosts, "http://example.com/a"));
+        assert!(!host_allowed(&hosts, "https://example.com.evil.com/a"));
+        assert!(!host_allowed(&hosts, "https://evilexample.com/a"));
+        assert!(!host_allowed(&hosts, "https://user@example.com/a"));
+        assert!(!host_allowed(&hosts, "https://example.com:8443/a"));
+
+        let dir = temp("net-plugin");
+        write(&dir, r#"{"id":"net-plugin","name":"N","permissions":["network"],"network":["api.example.com"]}"#, "");
+        assert_eq!(load(&dir).unwrap().0.network, vec!["api.example.com"]);
+        let dir = temp("net-missing");
+        write(&dir, r#"{"id":"net-missing","name":"N","permissions":["network"]}"#, "");
+        assert!(load(&dir).is_err());
+        let dir = temp("net-bad");
+        write(&dir, r#"{"id":"net-bad","name":"N","permissions":["network"],"network":["localhost"]}"#, "");
+        assert!(load(&dir).is_err());
     }
 
     #[test]

@@ -84,7 +84,18 @@ impl Images {
 
 const MAX_BYTES: u64 = 8 * 1024 * 1024;
 
+static PLUGIN_HOSTS: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
+
+pub fn set_plugin_hosts(hosts: Vec<String>) {
+    if let Ok(mut current) = PLUGIN_HOSTS.write() {
+        *current = hosts;
+    }
+}
+
 pub fn trusted(url: &str) -> bool {
+    if PLUGIN_HOSTS.read().is_ok_and(|hosts| !hosts.is_empty() && crate::plugins::manifest::host_allowed(&hosts, url)) {
+        return true;
+    }
     let Ok(parsed) = reqwest::Url::parse(url) else { return false };
     if parsed.scheme() != "https" || !parsed.username().is_empty() || parsed.password().is_some() || parsed.port().is_some() {
         return false;

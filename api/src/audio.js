@@ -2,29 +2,8 @@
   const FREQS = [60, 150, 400, 1000, 2400, 15000];
   const SDK = "https://sdk.scdn.co";
 
-  if (window === window.top) {
-    let current = null;
-    const broadcast = () => {
-      if (!current) return;
-      for (const frame of document.querySelectorAll("iframe")) {
-        try {
-          frame.contentWindow.postMessage({ rustifyAudio: current }, SDK);
-        } catch (e) {}
-      }
-    };
-    window.addEventListener("message", e => {
-      if (e.origin === SDK && e.data && e.data.rustifyAudioHello) broadcast();
-    });
-    window.rustifyAudio = {
-      apply(settings) {
-        current = settings;
-        broadcast();
-      },
-    };
-    return;
-  }
-
-  if (location.origin !== SDK) return;
+  const isTop = window === window.top;
+  if (!isTop && location.origin !== SDK) return;
 
   let settings = { eq: false, bands: [0, 0, 0, 0, 0, 0], level: "normal", mono: false, fade: 0, quality: "very_high", normalize: true };
   const gains = new Map();
@@ -59,6 +38,7 @@
     }
   };
 
+  if (!isTop) {
   const WS = window.WebSocket;
   const wrapEvent = e => (typeof e.data === "string" && e.data.includes("state_machine") ? new MessageEvent("message", { data: rewriteText(e.data), origin: e.origin }) : e);
   class Socket extends WS {
@@ -97,6 +77,7 @@
       }, () => res);
     });
   };
+  }
   const graphs = [];
 
   const levelGain = level => (level === "loud" ? 1.6 : level === "quiet" ? 0.6 : 1.0);
@@ -154,17 +135,40 @@
     } catch (e) {}
   };
 
-  window.addEventListener("message", e => {
-    if (e.source === window.parent && e.data && e.data.rustifyAudio) {
-      settings = Object.assign(settings, e.data.rustifyAudio);
-      graphs.forEach(tune);
-    }
-  });
+  if (isTop) {
+    let current = null;
+    const broadcast = () => {
+      if (!current) return;
+      for (const frame of document.querySelectorAll("iframe")) {
+        try {
+          frame.contentWindow.postMessage({ rustifyAudio: current }, SDK);
+        } catch (e) {}
+      }
+    };
+    window.addEventListener("message", e => {
+      if (e.origin === SDK && e.data && e.data.rustifyAudioHello) broadcast();
+    });
+    window.rustifyAudio = {
+      apply(next) {
+        current = next;
+        settings = Object.assign(settings, next);
+        graphs.forEach(tune);
+        broadcast();
+      },
+    };
+  } else {
+    window.addEventListener("message", e => {
+      if (e.source === window.parent && e.data && e.data.rustifyAudio) {
+        settings = Object.assign(settings, e.data.rustifyAudio);
+        graphs.forEach(tune);
+      }
+    });
+  }
 
   const play = HTMLMediaElement.prototype.play;
   HTMLMediaElement.prototype.play = function () {
     wire(this);
     return play.apply(this, arguments);
   };
-  window.parent.postMessage({ rustifyAudioHello: true }, "*");
+  if (!isTop) window.parent.postMessage({ rustifyAudioHello: true }, "*");
 })();

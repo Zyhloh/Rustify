@@ -20,6 +20,9 @@ const STORAGE_LIMIT: usize = 1024 * 1024;
 const MAX_TIMERS: usize = 100;
 const UI_OPS_PER_SECOND: u32 = 120;
 const SPOTIFY_PER_MINUTE: usize = 30;
+const NET_PER_MINUTE: usize = 120;
+const NET_BODY_LIMIT: usize = 1024 * 1024;
+const BLOCKED_HEADERS: [&str; 9] = ["host", "cookie", "authorization", "proxy-authorization", "connection", "content-length", "transfer-encoding", "origin", "referer"];
 pub const HIDEABLE: [&str; 8] = [
     "friends-button", "news-button", "now-playing-button", "lyrics-button", "queue-button", "devices-button", "mini-player-button", "fullscreen-button",
 ];
@@ -35,6 +38,7 @@ pub enum Cmd {
     Load(Box<Spec>),
     Unload(String),
     Emit(String, String),
+    EmitTo(String, String, String),
     Action { plugin: String, key: String, json: String },
     Resolve { plugin: String, id: u32, ok: bool, json: String },
     Shutdown,
@@ -52,6 +56,7 @@ pub enum UiOp {
     SectionRender { plugin: String, id: String, nodes: Vec<Value> },
     Hide { plugin: String, element: String, hidden: bool },
     Clipboard { plugin: String, text: String },
+    Audio { plugin: String, payload: Value },
     Render { plugin: String, id: String, nodes: Vec<Value> },
     Open { plugin: String, id: String },
     Theme { plugin: String, colors: BTreeMap<String, String> },
@@ -63,7 +68,22 @@ pub enum UiOp {
 }
 
 pub type Sink = Arc<dyn Fn(UiOp) + Send + Sync>;
-pub type Fetch = Arc<dyn Fn(String, Box<dyn FnOnce(Result<String, String>) + Send>) + Send + Sync>;
+#[derive(Debug, Clone)]
+pub enum Request {
+    Spotify(String),
+    Net { url: String, method: String, headers: Vec<(String, String)>, body: Option<String>, hosts: Vec<String> },
+}
+
+impl std::fmt::Display for Request {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Request::Spotify(path) => f.write_str(path),
+            Request::Net { method, url, .. } => write!(f, "{method} {url}"),
+        }
+    }
+}
+
+pub type Fetch = Arc<dyn Fn(Request, Box<dyn FnOnce(Result<String, String>) + Send>) + Send + Sync>;
 
 struct Shared {
     id: String,
@@ -73,6 +93,8 @@ struct Shared {
     timers: BTreeMap<u32, (Instant, Option<Duration>)>,
     next_request: u32,
     spotify_calls: VecDeque<Instant>,
+    net_calls: VecDeque<Instant>,
+    hosts: Vec<String>,
     last_notify: Option<Instant>,
     last_clipboard: Option<Instant>,
     ui_window: (Instant, u32),
@@ -335,6 +357,35 @@ impl Shared {
                 self.ui(UiOp::Hide { plugin: id, element, hidden: arg(payload, "hidden").as_bool().unwrap_or(true) })?;
                 Ok(String::new())
             }
+            "audio" => {
+                self.need("audio")?;
+                let action = string(payload, "action", 10);
+                let mut out = json!({ "action": action, "value": arg(payload, "value").as_f64().filter(|v| v.is_finite()).unwrap_or(0.0) });
+                match action.as_str() {
+                    "load" => {
+                        let track = arg(payload, "track");
+                        let url = string(track, "url", 2000);
+                        if !manifest::host_allowed(&self.hosts, &url) {
+                            return fail(format!("audio can only come from {} over https", self.hosts.join(", ")));
+                        }
+                        let image = string(track, "image", 2000);
+                        let image = if manifest::host_allowed(&self.hosts, &image) || crate::images::trusted(&image) { image } else { String::new() };
+                        out["track"] = json!({
+                            "url": url,
+                            "title": string(track, "title", 200),
+                            "artist": string(track, "artist", 200),
+                            "album": string(track, "album", 200),
+                            "image": image,
+                            "id": string(track, "id", 100),
+                            "start_ms": arg(track, "start").as_f64().filter(|v| v.is_finite() && *v >= 0.0).unwrap_or(0.0).min(86_400_000.0) as u64,
+                        });
+                    }
+                    "play" | "pause" | "toggle" | "seek" | "stop" => {}
+                    _ => return fail("audio action must be load, play, pause, toggle, seek or stop"),
+                }
+                self.ui(UiOp::Audio { plugin: id, payload: out })?;
+                Ok(String::new())
+            }
             "clipboard" => {
                 let now = Instant::now();
                 if self.last_clipboard.is_some_and(|t| now.duration_since(t) < Duration::from_secs(1)) {
@@ -391,23 +442,68 @@ impl Shared {
                     return Err("Spotify request limit reached (30 per minute)".into());
                 }
                 self.spotify_calls.push_back(now);
-                self.next_request += 1;
-                let id = self.next_request;
-                let (tx, plugin) = (self.tx.clone(), self.id.clone());
-                (self.fetch)(
-                    path,
-                    Box::new(move |result| {
-                        let (ok, json) = match result {
-                            Ok(json) => (true, json),
-                            Err(e) => (false, e),
-                        };
-                        let _ = tx.send(Cmd::Resolve { plugin, id, ok, json });
-                    }),
-                );
-                Ok(id)
+                Ok(self.request(Request::Spotify(path)))
+            }
+            "net.fetch" => {
+                self.need("network")?;
+                let url = string(payload, "url", 2000);
+                if !manifest::host_allowed(&self.hosts, &url) {
+                    return Err(format!("this plugin can only connect to {} over https", self.hosts.join(", ")));
+                }
+                let method = string(payload, "method", 10).to_ascii_uppercase();
+                let method = if method.is_empty() { "GET".to_owned() } else { method };
+                if !matches!(method.as_str(), "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD") {
+                    return Err("method must be GET, POST, PUT, PATCH, DELETE or HEAD".into());
+                }
+                let headers: Vec<(String, String)> = arg(payload, "headers")
+                    .as_object()
+                    .map(|o| {
+                        o.iter()
+                            .take(30)
+                            .filter_map(|(k, v)| v.as_str().map(|v| (k.to_ascii_lowercase(), v.chars().take(1000).collect::<String>())))
+                            .filter(|(k, v)| {
+                                !BLOCKED_HEADERS.contains(&k.as_str())
+                                    && !k.starts_with("sec-")
+                                    && k.len() <= 64
+                                    && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                                    && !v.contains(['\r', '\n'])
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let body = arg(payload, "body").as_str().map(str::to_owned);
+                if body.as_ref().is_some_and(|b| b.len() > NET_BODY_LIMIT) {
+                    return Err("request body is larger than 1 MB".into());
+                }
+                let now = Instant::now();
+                while self.net_calls.front().is_some_and(|t| now.duration_since(*t) > Duration::from_secs(60)) {
+                    self.net_calls.pop_front();
+                }
+                if self.net_calls.len() >= NET_PER_MINUTE {
+                    return Err("request limit reached (120 per minute)".into());
+                }
+                self.net_calls.push_back(now);
+                Ok(self.request(Request::Net { url, method, headers, body, hosts: self.hosts.clone() }))
             }
             _ => Err(format!("unknown operation \"{op}\"")),
         }
+    }
+
+    fn request(&mut self, request: Request) -> u32 {
+        self.next_request += 1;
+        let id = self.next_request;
+        let (tx, plugin) = (self.tx.clone(), self.id.clone());
+        (self.fetch)(
+            request,
+            Box::new(move |result| {
+                let (ok, json) = match result {
+                    Ok(json) => (true, json),
+                    Err(e) => (false, e),
+                };
+                let _ = tx.send(Cmd::Resolve { plugin, id, ok, json });
+            }),
+        );
+        id
     }
 }
 
@@ -455,6 +551,8 @@ impl Instance {
             timers: BTreeMap::new(),
             next_request: 0,
             spotify_calls: VecDeque::new(),
+            net_calls: VecDeque::new(),
+            hosts: m.network.clone(),
             last_notify: None,
             last_clipboard: None,
             ui_window: (Instant::now(), 0),
@@ -594,6 +692,13 @@ fn run(rx: mpsc::Receiver<Cmd>, tx: mpsc::Sender<Cmd>, sink: Sink, fetch: Fetch)
                     if let Err(e) = p.call("__emit", kind.clone(), Some(payload.clone())) {
                         report(&sink, id, &e);
                     }
+                }
+            }
+            Ok(Cmd::EmitTo(plugin, kind, payload)) => {
+                if let Some(p) = plugins.get_mut(&plugin)
+                    && let Err(e) = p.call("__emit", kind, Some(payload))
+                {
+                    report(&sink, &plugin, &e);
                 }
             }
             Ok(Cmd::Action { plugin, key, json }) => {
@@ -739,10 +844,13 @@ mod tests {
 
     #[test]
     fn no_ambient_authority() {
-        let script = "console.log([typeof require, typeof process, typeof fetch, typeof XMLHttpRequest, typeof __host, typeof __hostAsync, typeof std, typeof os].join(','))";
+        let script = "console.log([typeof require, typeof process, typeof XMLHttpRequest, typeof __host, typeof __hostAsync, typeof std, typeof os, typeof WebSocket].join(','));
+            fetch('https://example.com').catch(e => console.log('fetch ' + e.message));";
         let (p, ops) = plugin("sandbox", &[], script);
         assert!(p.is_ok());
-        assert_eq!(logs(&ops), vec!["undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined"]);
+        let l = logs(&ops);
+        assert_eq!(l[0], "undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined");
+        assert!(l[1].contains("\"network\" permission"), "{l:?}");
     }
 
     #[test]
@@ -851,8 +959,8 @@ mod tests {
         let sink: Sink = Arc::new(move |op| seen.lock().unwrap().push(op));
         let requested = Arc::new(Mutex::new(Vec::new()));
         let paths = requested.clone();
-        let fetch: Fetch = Arc::new(move |path, done| {
-            paths.lock().unwrap().push(path);
+        let fetch: Fetch = Arc::new(move |request, done| {
+            paths.lock().unwrap().push(request.to_string());
             done(Ok(r#"{"name":"Song","album":{"release_date":"2024-05-01"}}"#.into()))
         });
         let (tx, rx) = mpsc::channel();
@@ -1033,5 +1141,83 @@ mod tests {
         p.call("__action", handle, Some(r#"{"id":"b1","value":""}"#.into())).unwrap();
         assert_eq!(p.shared.borrow().storage.get("snooze").map(String::as_str), Some("1"));
         assert!(ops.lock().unwrap().iter().any(|o| matches!(o, UiOp::Section { id, remove: true, .. } if *id == key)));
+    }
+
+    type NetHarness = (Result<Instance, String>, Arc<Mutex<Vec<UiOp>>>, Arc<Mutex<Vec<String>>>, mpsc::Receiver<Cmd>);
+
+    fn net_plugin(perms: &[&str], script: &str) -> NetHarness {
+        let ops = Arc::new(Mutex::new(Vec::new()));
+        let seen = ops.clone();
+        let sink: Sink = Arc::new(move |op| seen.lock().unwrap().push(op));
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let log = requests.clone();
+        let fetch: Fetch = Arc::new(move |request, done| {
+            log.lock().unwrap().push(request.to_string());
+            done(Ok(r#"{"status":200,"statusText":"OK","url":"https://api.example.com/songs","headers":{"content-type":"application/json"},"body":"{\"songs\":[1,2]}"}"#.into()))
+        });
+        let (tx, rx) = mpsc::channel();
+        let manifest = Manifest {
+            id: "net".into(),
+            name: "net".into(),
+            main: "index.js".into(),
+            permissions: perms.iter().map(|p| p.to_string()).collect(),
+            network: vec!["example.com".into()],
+            ..Manifest::default()
+        };
+        let storage_dir = std::env::temp_dir().join(format!("rustify-net-test-{}", std::process::id()));
+        (Instance::start(Spec { manifest, script: script.into(), storage_dir, state: None }, sink, fetch, tx), ops, requests, rx)
+    }
+
+    #[test]
+    fn network_needs_permission_and_listed_hosts() {
+        let (p, ops, requests, _rx) = net_plugin(&[], "fetch('https://api.example.com/a').catch(e => console.log('blocked ' + e.message))");
+        assert!(p.is_ok());
+        assert!(requests.lock().unwrap().is_empty());
+        assert!(logs(&ops).iter().any(|l| l.contains("blocked") && l.contains("network")));
+
+        let script = "let out = [];
+            for (const url of ['https://evil.test/x', 'http://api.example.com/x', 'https://example.com.evil.test/x', 'https://api.example.com:444/x']) {
+                fetch(url).catch(() => out.push('no'));
+            }
+            fetch('https://api.example.com/songs', { method: 'POST', headers: { 'X-Key': 'a', Cookie: 'steal', Host: 'evil' }, body: { q: 1 } })
+                .then(r => r.json().then(j => console.log('ok ' + r.status + ' ' + r.headers.get('Content-Type') + ' ' + j.songs.length)));
+            Promise.resolve().then(() => Promise.resolve()).then(() => console.log('blocked ' + out.length));";
+        let (p, ops, requests, rx) = net_plugin(&["network"], script);
+        let mut p = p.unwrap();
+        assert_eq!(requests.lock().unwrap().as_slice(), ["POST https://api.example.com/songs"]);
+        while let Ok(Cmd::Resolve { id, ok, json, .. }) = rx.try_recv() {
+            p.call_resolve(id, ok, json).unwrap();
+        }
+        let l = logs(&ops);
+        assert!(l.iter().any(|x| x == "blocked 4"), "{l:?}");
+        assert!(l.iter().any(|x| x == "ok 200 application/json 2"), "{l:?}");
+    }
+
+    #[test]
+    fn audio_needs_permission_and_listed_hosts() {
+        let (p, ops, _, _) = net_plugin(&["network"], "try { Rustify.Audio.load({ url: 'https://cdn.example.com/a.mp3' }); } catch (e) { console.log('no audio'); }");
+        assert!(p.is_ok());
+        assert_eq!(logs(&ops), vec!["no audio"]);
+
+        let script = "let bad = 0;
+            try { Rustify.Audio.load({ url: 'https://evil.test/a.mp3' }); } catch (e) { bad++; }
+            try { Rustify.Audio.load({ url: 'http://cdn.example.com/a.mp3' }); } catch (e) { bad++; }
+            Rustify.Audio.load({ url: 'https://cdn.example.com/a.mp3', title: 'Song', artist: 'Artist', image: 'https://evil.test/x.jpg' });
+            const el = new Audio('https://cdn.example.com/b.mp3');
+            el.title = 'Two';
+            el.play();
+            Rustify.Audio.on('next', e => console.log('next ' + e.event));
+            console.log('bad ' + bad);";
+        let (p, ops, _, _) = net_plugin(&["audio"], script);
+        let mut p = p.unwrap();
+        let loads: Vec<Value> = ops.lock().unwrap().iter().filter_map(|o| if let UiOp::Audio { payload, .. } = o { Some(payload.clone()) } else { None }).collect();
+        assert_eq!(loads.len(), 2);
+        assert_eq!(loads[0]["track"]["title"], "Song");
+        assert_eq!(loads[0]["track"]["image"], "");
+        assert_eq!(loads[1]["track"]["url"], "https://cdn.example.com/b.mp3");
+        p.call("__emit", "audio".into(), Some(r#"{"event":"next","message":""}"#.into())).unwrap();
+        let l = logs(&ops);
+        assert!(l.iter().any(|x| x == "bad 2"), "{l:?}");
+        assert!(l.iter().any(|x| x == "next next"), "{l:?}");
     }
 }

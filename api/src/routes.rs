@@ -295,6 +295,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/auth/logout", post(auth_logout))
         .route("/auth/library", post(auth_library))
         .route("/plugin/spotify", get(plugin_spotify))
+        .route("/plugin/audio", post(plugin_audio))
         .route("/me", get(me))
         .route("/home", get(home_feed))
         .route("/library", get(library))
@@ -362,6 +363,59 @@ fn plugin_path_ok(path: &str) -> bool {
         && !path.contains("..")
         && !path.contains("//")
         && path.bytes().all(|b| b.is_ascii_alphanumeric() || b"/_-.?=&,%:+".contains(&b))
+}
+
+#[derive(Deserialize)]
+struct PluginAudioBody {
+    plugin: String,
+    action: String,
+    #[serde(default)]
+    value: f64,
+    #[serde(default)]
+    track: Option<crate::player::ExternalTrack>,
+}
+
+pub fn public_https(url: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(url) else { return false };
+    let Some(host) = parsed.host_str() else { return false };
+    parsed.scheme() == "https"
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && url.len() <= 2000
+        && host.contains('.')
+        && host.parse::<std::net::IpAddr>().is_err()
+        && !host.trim_start_matches('[').starts_with(|c: char| c.is_ascii_digit() || c == ':')
+        && !host.eq_ignore_ascii_case("localhost")
+        && !host.to_ascii_lowercase().ends_with(".localhost")
+        && !host.to_ascii_lowercase().ends_with(".local")
+}
+
+fn plugin_id_ok(id: &str) -> bool {
+    (3..=40).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+async fn plugin_audio(State(st): Shared, Json(b): Json<PluginAudioBody>) -> ApiResult<Value> {
+    if !plugin_id_ok(&b.plugin) {
+        return Err(anyhow::anyhow!("invalid plugin").into());
+    }
+    if b.action == "load" {
+        let Some(mut track) = b.track else { return Err(anyhow::anyhow!("missing track").into()) };
+        if !public_https(&track.url) {
+            return Err(anyhow::anyhow!("audio must come from a public https address").into());
+        }
+        if !track.image.is_empty() && !public_https(&track.image) {
+            track.image.clear();
+        }
+        let clip = |t: &mut String, n: usize| *t = t.chars().filter(|c| !c.is_control()).take(n).collect();
+        clip(&mut track.title, 200);
+        clip(&mut track.artist, 200);
+        clip(&mut track.album, 200);
+        clip(&mut track.id, 100);
+        st.engine.load_external(&b.plugin, track).await?;
+    } else {
+        st.engine.external_command(&b.plugin, &b.action, b.value).await?;
+    }
+    Ok(Json(json!({ "ok": true })))
 }
 
 async fn plugin_spotify(State(st): Shared, axum::extract::Query(q): axum::extract::Query<PluginQuery>) -> ApiResult<Value> {
@@ -1124,7 +1178,19 @@ async fn events(State(st): Shared, ws: WebSocketUpgrade) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use super::plugin_path_ok;
+    use super::{plugin_path_ok, public_https};
+
+    #[test]
+    fn public_audio_addresses() {
+        assert!(public_https("https://cdn.example.com/a.mp3"));
+        assert!(!public_https("http://cdn.example.com/a.mp3"));
+        assert!(!public_https("https://127.0.0.1/a.mp3"));
+        assert!(!public_https("https://[::1]/a.mp3"));
+        assert!(!public_https("https://localhost/a.mp3"));
+        assert!(!public_https("https://router.local/a.mp3"));
+        assert!(!public_https("https://user@cdn.example.com/a.mp3"));
+        assert!(!public_https("file:///C:/a.mp3"));
+    }
 
     #[test]
     fn plugin_paths() {
