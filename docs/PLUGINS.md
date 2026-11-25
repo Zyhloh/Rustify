@@ -68,7 +68,7 @@ Complete examples live in [`examples/plugins`](../examples/plugins): `now-playin
 | `homepage` | no | `https://` link to a website. |
 | `icon` | no | A `.png` or `.jpg` in the folder, up to 256 KB. Square, 256 by 256 works best. Without one, Rustify draws a letter tile. |
 | `main` | no | Script file name inside the folder. Defaults to `index.js`. Themes can't have one. |
-| `permissions` | no | Any of `player`, `spotify`, `theme`, `network`, `audio`. |
+| `permissions` | no | Any of `player`, `spotify`, `theme`, `network`, `audio`, `playlists`. |
 | `network` | no | Websites the plugin talks to, like `["api.example.com"]`. Subdomains are included. Required with `network` or `audio`. |
 | `theme` | no | Colors. Required for themes. A plugin needs the `theme` permission to use it. See [Themes](#themes). |
 
@@ -83,6 +83,7 @@ Unknown fields are rejected so typos are caught early. Links must be `https://`.
 | `theme` | Changing Rustify's colors. |
 | `network` | HTTPS requests to the websites listed in `network`. |
 | `audio` | Playing audio streams from the websites listed in `network` through Rustify's player. |
+| `playlists` | Adding the plugin's own songs to the user's Spotify playlists. |
 
 Everything else needs no permission: reading the current playback state, buttons, menu items, pages, storage, notifications, timers and navigation.
 
@@ -263,6 +264,32 @@ Also available: `play()`, `pause()`, `toggle()`, `seek(ms)`, `stop()`, and `play
 `Rustify.Audio.setQueue(items, title)` shows your own up-next list in Rustify's queue panel. Items are `{ id, title, artist, image }`. Clicking one sends a `select` event with its `id`. Pass an empty list to remove it. Code written for the browser's `new Audio(url)` also works: `play()`, `pause()`, `currentTime`, `duration`, `paused` and the `play`, `pause`, `timeupdate`, `ended` and `error` events. Set `title`, `artist` and `artwork` on it to show them in the player bar.
 
 The current track's URI is `plugin:<your id>:<track id>`, so `Rustify.Player.data` and events tell you when your audio is playing.
+
+### Your songs in Spotify playlists
+
+```js
+const song = { id: "vault-42", title: "Song name", artist: "Artist", album: "Album", duration: 214000, image: "https://cdn.example.com/cover.jpg" };
+
+Rustify.Library.register([song]);
+await Rustify.Library.addToPlaylist("37i9dQZF1DXcBWIGoYBM5M", song);
+
+Rustify.Library.onPlay(entry => {
+  Rustify.Audio.load({ url: streamUrlFor(entry.id), title: entry.title, artist: entry.artist, image: entry.image, id: entry.id });
+  Rustify.Audio.setQueue(entry.queue.map(q => ({ id: q.id, title: q.title, artist: q.artist, image: q.image })));
+});
+```
+
+Needs the `playlists` permission, and `audio` to play the songs.
+
+`addToPlaylist` adds a song to one of the user's real Spotify playlists as a local-file entry, the same kind Spotify's own app creates when you add a file from your computer. It's stored on Spotify, so it stays in the playlist on every device. Other Spotify apps show it greyed out because they can't play it.
+
+`register` tells Rustify which songs are yours: their ID and cover image. Call it every time your plugin starts with every song you've added, so Rustify can show your covers in playlists and send playback to you. Songs added with `addToPlaylist` are registered automatically for that session.
+
+When someone plays one of your songs, `onPlay` gets `{ uri, id, title, artist, album, duration, image, queue }`. `queue` lists your songs that follow it in that playlist, so you can load them as your up-next. Play it with `Rustify.Audio`.
+
+The playlist ID is the part after `spotify:playlist:`, and the full `spotify:playlist:...` form also works. Plugins can't remove entries, edit Liked Songs or touch anything else in the user's library. The user removes entries like any other song. Spotify doesn't allow local files in Liked Songs.
+
+Songs are matched by title, artist, album and length in seconds, so two songs with the same details count as one. Changing a song's details after adding it creates a different entry.
 
 ### Storage
 
@@ -478,6 +505,6 @@ Save a file and the plugin reloads within a couple of seconds.
 
 ## What plugins can't do
 
-- Change Spotify's own data. Spotify playlists, Liked Songs and the Spotify queue only hold Spotify tracks, so plugin songs can't be added to them. Keep your own playlists and library in plugin storage or on your server, show them on your pages, and use `Rustify.Audio.setQueue` for up next.
+- Add songs to Liked Songs or the Spotify queue. Spotify only accepts its own tracks there. Playlists work through `Rustify.Library`, and `Rustify.Audio.setQueue` covers up next.
 - Edit Rustify's screens directly. Use pages, sections, dialogs, buttons and menu items.
 - Use CSS. Themes and `Rustify.Theme.set` change colors and corner rounding everywhere at once.

@@ -48,6 +48,13 @@ struct Found {
     icon: Option<slint::Image>,
 }
 
+#[derive(Clone)]
+pub struct CatalogSong {
+    pub plugin: String,
+    pub image: String,
+    pub id: String,
+}
+
 struct Menu {
     plugin: String,
     id: String,
@@ -83,6 +90,7 @@ struct State {
     last_state: Option<String>,
     last_track: String,
     last_audio: Option<(String, u64)>,
+    catalog: std::collections::HashMap<String, CatalogSong>,
     last_playing: Option<bool>,
     query: String,
     tab: String,
@@ -180,6 +188,14 @@ pub fn install(app: &App, ctx: &Ctx) {
                     api.get::<Value>(&url).await.map(|v| v.to_string()).map_err(|e| e.to_string())
                 }
                 host::Request::Net { url, method, headers, body, hosts } => net::fetch(url, method, headers, body, hosts).await,
+                host::Request::PlaylistAdd { plugin, playlist, title, artist, album, duration_ms } => api
+                    .post_json::<Value>(
+                        "/plugin/playlist-add",
+                        json!({ "plugin": plugin, "playlist": playlist, "title": title, "artist": artist, "album": album, "duration_ms": duration_ms }),
+                    )
+                    .await
+                    .map(|v| v.to_string())
+                    .map_err(|e| e.to_string()),
             };
             done(result);
         });
@@ -529,7 +545,22 @@ pub fn set_dev_mode(on: bool) {
     save();
 }
 
+pub fn catalog_uri(plugin: &str, id: &str) -> Option<String> {
+    if id.is_empty() {
+        return None;
+    }
+    STATE.with(|s| s.borrow().catalog.iter().find(|(_, song)| song.plugin == plugin && song.id == id).map(|(uri, _)| uri.clone()))
+}
+
+pub fn catalog_song(uri: &str) -> Option<CatalogSong> {
+    STATE.with(|s| {
+        let s = s.borrow();
+        s.catalog.get(uri).filter(|song| s.running.contains(&song.plugin)).cloned()
+    })
+}
+
 fn clear_plugin(s: &mut State, id: &str) {
+    s.catalog.retain(|_, song| song.plugin != id);
     retain(&s.topbar, |c| c.plugin != id);
     retain(&s.playbar, |c| c.plugin != id);
     retain(&s.row_buttons, |c| c.plugin != id);
@@ -853,6 +884,18 @@ fn apply(app: &App, op: UiOp) {
                     rebuild_sections(&s);
                 }
             }
+            UiOp::Catalog { plugin, songs } => {
+                if s.catalog.len() + songs.len() > 50_000 {
+                    log(&s, &plugin, "warn", "the song catalog is full (50,000 songs)");
+                } else {
+                    for (uri, image, id) in songs {
+                        s.catalog.insert(uri, CatalogSong { plugin: plugin.clone(), image: image.clone(), id });
+                        if !image.is_empty() {
+                            images.push(crate::images::key(&image, crate::pages::TRACK_PX));
+                        }
+                    }
+                }
+            }
             UiOp::Audio { plugin, mut payload } => {
                 payload["plugin"] = json!(plugin);
                 audio = Some(payload);
@@ -1083,6 +1126,79 @@ pub fn player_state(state: &crate::models::PlayerState) {
     if state.is_playing {
         send(Cmd::Emit("onprogress".into(), snapshot));
     }
+}
+
+pub fn local_play(uri: &str, following: &[String]) -> bool {
+    let listeners: Vec<String> = STATE.with(|s| {
+        let s = s.borrow();
+        s.found
+            .iter()
+            .filter_map(|f| f.manifest.as_ref())
+            .filter(|m| s.running.contains(&m.id) && m.permissions.iter().any(|p| p == "audio"))
+            .map(|m| m.id.clone())
+            .collect()
+    });
+    if listeners.is_empty() {
+        return false;
+    }
+    let mut entry = parse_local(uri);
+    let owner = catalog_song(uri);
+    if let Some(song) = &owner {
+        entry["id"] = json!(song.id);
+        entry["image"] = json!(song.image);
+    }
+    let listeners: Vec<String> = match owner {
+        Some(song) if listeners.contains(&song.plugin) => vec![song.plugin],
+        _ => return false,
+    };
+    let queue: Vec<Value> = following
+        .iter()
+        .filter_map(|u| {
+            let song = catalog_song(u).filter(|s| listeners.contains(&s.plugin))?;
+            let mut item = parse_local(u);
+            item["id"] = json!(song.id);
+            item["image"] = json!(song.image);
+            Some(item)
+        })
+        .take(500)
+        .collect();
+    entry["queue"] = Value::Array(queue);
+    for plugin in listeners {
+        send(Cmd::EmitTo(plugin, "localplay".into(), entry.to_string()));
+    }
+    true
+}
+
+fn parse_local(uri: &str) -> Value {
+    let decode = |part: &str| -> String {
+        let bytes = part.as_bytes();
+        let mut out = Vec::with_capacity(bytes.len());
+        let mut i = 0;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'+' => out.push(b' '),
+                b'%' if i + 2 < bytes.len() => match std::str::from_utf8(&bytes[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                    Some(v) => {
+                        out.push(v);
+                        i += 2;
+                    }
+                    None => out.push(b'%'),
+                },
+                other => out.push(other),
+            }
+            i += 1;
+        }
+        String::from_utf8_lossy(&out).into_owned()
+    };
+    let parts: Vec<&str> = uri.strip_prefix("spotify:local:").unwrap_or_default().split(':').collect();
+    let get = |i: usize| parts.get(i).map(|p| decode(p)).unwrap_or_default();
+    json!({
+        "uri": uri,
+        "artist": get(0),
+        "album": get(1),
+        "title": get(2),
+        "duration": parts.get(3).and_then(|d| d.parse::<u64>().ok()).unwrap_or(0) * 1000,
+    })
 }
 
 pub fn search_changed(query: &str, filter: &str) {

@@ -8,6 +8,7 @@ mod ctx;
 mod find;
 mod images;
 mod items;
+mod local;
 mod menu;
 mod models;
 mod news;
@@ -66,6 +67,7 @@ fn main() -> anyhow::Result<()> {
     let recent_keys = search::install(&app);
     bindings::bind(&app, &ctx);
     plugins::install(&app, &ctx);
+    local::install(&app, &ctx);
     ctx.load_images(recent_keys);
     if ready {
         ctx.spawn(ctx.clone().boot());

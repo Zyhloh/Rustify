@@ -24,6 +24,8 @@ pub struct TrackRow {
     pub explicit: bool,
     pub added: String,
     pub added_by: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub local_file: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -152,6 +154,31 @@ pub fn artists(v: &Value) -> Vec<ArtistRef> {
 
 pub fn track_row(track: &Value, added_at: &str, added_by: String) -> Option<TrackRow> {
     let id = s(track, "id");
+    let uri = s(track, "uri");
+    if id.is_empty() && uri.starts_with("spotify:local:") {
+        let local = crate::local::parse_uri(&uri)?;
+        let name = Some(s(track, "name")).filter(|n| !n.is_empty()).unwrap_or(local.title);
+        let mut artists = artists(track);
+        if artists.iter().all(|a| a.name.is_empty()) {
+            artists = if local.artist.is_empty() { Vec::new() } else { vec![ArtistRef { id: String::new(), name: local.artist }] };
+        }
+        let album = track.get("album").map(|a| s(a, "name")).filter(|n| !n.is_empty()).unwrap_or(local.album);
+        let ms = track.get("duration_ms").and_then(Value::as_u64).filter(|d| *d > 0).unwrap_or(local.seconds as u64 * 1000);
+        return Some(TrackRow {
+            id: String::new(),
+            uri,
+            album_id: String::new(),
+            name,
+            artists,
+            album,
+            image: None,
+            duration: format_duration(ms),
+            explicit: false,
+            added: relative_date(added_at),
+            added_by,
+            local_file: false,
+        });
+    }
     if id.is_empty() {
         return None;
     }
@@ -168,6 +195,7 @@ pub fn track_row(track: &Value, added_at: &str, added_by: String) -> Option<Trac
         explicit: track.get("explicit").and_then(Value::as_bool).unwrap_or(false),
         added: relative_date(added_at),
         added_by,
+        local_file: false,
     })
 }
 
@@ -447,6 +475,7 @@ async fn liked_row(session: &librespot::core::session::Session, uri: &str) -> Op
             explicit: track.is_explicit,
             added: String::new(),
             added_by: String::new(),
+            local_file: false,
         },
         ms,
     ))
@@ -817,6 +846,7 @@ pub async fn playlist_native(
                 explicit: track.is_explicit,
                 added: if added_ms > 0 { relative_date(&iso_from_ms(added_ms)) } else { String::new() },
                 added_by: if added_by == me.id { me.display_name.clone() } else { added_by },
+                local_file: false,
             })
         })
         .buffered(8)

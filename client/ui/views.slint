@@ -316,7 +316,7 @@ export component MiniView inherits Rectangle {
                     }
                 }
 
-                if Player.has-track: LikeButton {
+                if Player.has-track && Player.likeable: LikeButton {
                     y: 4px;
                     liked: Player.saved;
                     toggled => { Player.save-pressed(); }

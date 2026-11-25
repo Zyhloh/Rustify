@@ -250,7 +250,7 @@ impl Ctx {
     }
 
     fn load_saved(&self, id: String) {
-        if id.is_empty() {
+        if id.is_empty() || !id.bytes().all(|b| b.is_ascii_alphanumeric()) {
             return;
         }
         let ctx = self.clone();
@@ -395,6 +395,7 @@ impl Ctx {
         let route = match card.kind.as_str() {
             "playlist" | "album" => Route::Collection { kind: card.kind.to_string(), id: card.id.to_string() },
             "collection" => Route::Collection { kind: "collection".into(), id: "liked".into() },
+            "local" => Route::Collection { kind: "local".into(), id: "files".into() },
             "artist" => Route::Artist { id: card.id.to_string() },
             "show" => Route::Show { id: card.id.to_string() },
             "episodes" => Route::Show { id: crate::podcast::YOUR_EPISODES.into() },
@@ -898,7 +899,64 @@ impl Ctx {
         self.command("/player/play", json!({ "context_uri": context, "offset_uri": track_uri }));
     }
 
+    pub fn play_local(&self, uris: Vec<String>, index: usize) {
+        self.play_local_in(uris, index, Some(("local:files".into(), "Local Files".into())));
+    }
+
+    pub fn play_local_in(&self, uris: Vec<String>, index: usize, context: Option<(String, String)>) {
+        let ctx = self.clone();
+        self.spawn(async move {
+            let start = uris.get(index).cloned().unwrap_or_default();
+            let following: Vec<String> = uris.iter().skip(index + 1).cloned().collect();
+            match ctx.api.post_json::<Value>("/local/play", json!({ "uris": uris, "index": index })).await {
+                Ok(v) if v.get("handled").and_then(Value::as_bool) == Some(true) => {
+                    if let Some((uri, title)) = context {
+                        ctx.ui(move |app| {
+                            let player = app.global::<Player>();
+                            player.set_context_uri(uri.into());
+                            player.set_context_title(title.into());
+                        });
+                    }
+                }
+                Ok(v) if v.get("missing").and_then(Value::as_bool) == Some(true) => {
+                    ctx.ui(|app| crate::menu::toast(app, "This file was moved or deleted. Rustify is rescanning your folders"));
+                }
+                Ok(_) => ctx.ui(move |app| {
+                    if crate::plugins::local_play(&start, &following) {
+                        if let Some((uri, title)) = context {
+                            let player = app.global::<Player>();
+                            player.set_context_uri(uri.into());
+                            player.set_context_title(title.into());
+                        }
+                    } else {
+                        crate::menu::toast(app, "This song isn't on this computer. Add its folder in Settings under Local Files");
+                    }
+                }),
+                Err(e) => {
+                    tracing::warn!("local play: {e}");
+                    ctx.ui(|app| crate::menu::toast(app, "Couldn't play this local file"));
+                }
+            }
+        });
+    }
+
+    fn play_all_local(&self) {
+        let ctx = self.clone();
+        self.spawn(async move {
+            if let Ok(page) = ctx.api.get::<models::Collection>("/collection/local/files").await {
+                let uris: Vec<String> = page.tracks.iter().map(|t| t.uri.clone()).collect();
+                if !uris.is_empty() {
+                    ctx.play_local(uris, 0);
+                }
+            }
+        });
+    }
+
     pub fn play(&self, kind: &str, uri: &str) {
+        if kind == "local" || uri == "local" || uri == "local:files" {
+            self.play_all_local();
+            return;
+        }
         let body = match kind {
             "collection" => json!({ "context_uri": "collection" }),
             "track" | "episode" => json!({ "uris": [uri] }),

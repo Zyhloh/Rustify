@@ -1,7 +1,7 @@
 use crate::models::{SavedState, TrackInfo};
 use crate::pages::{self, Route};
 use crate::{App, Credits, Menu, NamedItem, PickerItem, Player, Toast, TrackData, ctx::Ctx, images, models, state};
-use serde_json::json;
+use serde_json::{Value, json};
 use slint::{ComponentHandle, Image, Model, ModelRc, Timer, TimerMode, VecModel};
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
@@ -50,7 +50,9 @@ pub fn open(app: &App, ctx: &Ctx, track: TrackData, x: f32, y: f32) {
     let id = track.id.to_string();
     let liked = pages::saved_for(&id).map(|s| s.liked).unwrap_or(false);
 
-    menu.set_track_id(track.id.clone());
+    let local = track.uri.starts_with("spotify:local:");
+    menu.set_local(local);
+    menu.set_track_id(if local { track.uri.clone() } else { track.id.clone() });
     menu.set_liked(liked);
     menu.set_plugin_items(slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(crate::plugins::menu_entries("track")))));
     menu.set_artists(ModelRc::from(Rc::new(VecModel::from(
@@ -76,6 +78,23 @@ pub fn open(app: &App, ctx: &Ctx, track: TrackData, x: f32, y: f32) {
         m.query.borrow_mut().clear();
     });
     rebuild_playlists(app);
+
+    if local {
+        let c = ctx.clone();
+        let uri = track_uri_of();
+        ctx.spawn(async move {
+            if let Ok(options) = c.api.get::<Vec<models::PlaylistOption>>("/playlists/editable").await {
+                let loader = c.clone();
+                c.ui(move |app| {
+                    if app.global::<Menu>().get_track_id() == uri.as_str() {
+                        pages::set_options(options);
+                        loader.load_images(rebuild_playlists(app));
+                    }
+                });
+            }
+        });
+        return;
+    }
 
     let c = ctx.clone();
     let track_id = id.clone();
@@ -163,6 +182,21 @@ pub fn close(app: &App) {
     menu.set_sub("".into());
 }
 
+fn track_uri_of() -> String {
+    MENU.with(|m| m.track.borrow().uri.to_string())
+}
+
+fn local_change(ctx: &Ctx, playlist: String, uri: String, add: bool) {
+    let c = ctx.clone();
+    ctx.spawn(async move {
+        let path = format!("/playlist/{playlist}/local");
+        if let Err(e) = c.api.post_json::<Value>(&path, json!({ "uri": uri, "add": add })).await {
+            tracing::warn!("local playlist change: {e}");
+            c.ui(|app| toast(app, "Couldn't change the playlist. Try again in a moment"));
+        }
+    });
+}
+
 fn current() -> (TrackData, Option<TrackInfo>) {
     MENU.with(|m| (m.track.borrow().clone(), m.info.borrow().clone()))
 }
@@ -171,6 +205,11 @@ pub fn add_to(app: &App, ctx: &Ctx, playlist: &str) {
     let (track, _) = current();
     close(app);
     let name = pages::options().into_iter().find(|o| o.id == playlist).map(|o| o.name).unwrap_or_default();
+    if track.uri.starts_with("spotify:local:") {
+        local_change(ctx, playlist.to_owned(), track.uri.to_string(), true);
+        toast(app, &format!("Added to {name}"));
+        return;
+    }
     ctx.update_saved(track.id.to_string(), json!({ "add": [playlist] }));
     toast(app, &format!("Added to {name}"));
 }
@@ -202,6 +241,12 @@ pub fn action(app: &App, ctx: &Ctx, action: &str) {
         "queue" => {
             ctx.command("/player/queue", json!({ "uri": uri }));
             toast(app, "Added to queue");
+        }
+        "remove" if uri.starts_with("spotify:local:") => {
+            let header = app.global::<crate::Store>().get_collection();
+            pages::remove_track(&uri);
+            local_change(ctx, header.id.to_string(), uri, false);
+            toast(app, &format!("Removed from {}", header.title));
         }
         "remove" => {
             let header = app.global::<crate::Store>().get_collection();

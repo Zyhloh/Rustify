@@ -152,6 +152,7 @@ fn episode_as_track(v: &Value) -> Option<TrackRow> {
         explicit: e.explicit,
         added: String::new(),
         added_by: String::new(),
+        local_file: false,
     })
 }
 

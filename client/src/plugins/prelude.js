@@ -457,6 +457,30 @@
   };
   on("audio", event => event && audioEmit(event.event, event));
 
+  const encodeLocal = part =>
+    encodeURIComponent(String(part ?? ""))
+      .replace(/%20/g, "+")
+      .replace(/[!'()]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+
+  const LibraryApi = Object.freeze({
+    addToPlaylist: (playlist, song) => {
+      try {
+        const pending = callAsync("library.add", { playlist: String(playlist || ""), song: song || {} });
+        call("library.register", { songs: [song || {}] });
+        return pending;
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    },
+    register: songs => call("library.register", { songs: Array.isArray(songs) ? songs : [] }),
+    localUri: song =>
+      "spotify:local:" +
+      [song?.artist, song?.album, song?.title].map(encodeLocal).join(":") +
+      ":" +
+      Math.floor((Number(song?.duration) || 0) / 1000),
+    onPlay: cb => on("localplay", entry => typeof cb === "function" && cb(entry)),
+  });
+
   const AudioApi = Object.freeze({
     load: track => call("audio", { action: "load", track: track || {} }),
     play: () => call("audio", { action: "play" }),
@@ -564,6 +588,7 @@
     Spotify: Object.freeze({ get: path => callAsync("spotify.get", { path: String(path) }) }),
     fetch: netFetch,
     Audio: AudioApi,
+    Library: LibraryApi,
     UI: Object.freeze({
       Topbar: Object.freeze({ Button: controls("topbar", "ui.topbar") }),
       Playbar: Object.freeze({ Button: controls("playbar", "ui.playbar") }),

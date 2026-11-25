@@ -36,7 +36,10 @@ pub struct Engine {
     token_pending: std::sync::atomic::AtomicBool,
     audio: std::sync::Mutex<AudioSettings>,
     external: std::sync::Mutex<Option<External>>,
+    local_queue: std::sync::Mutex<(Vec<ExternalTrack>, usize)>,
 }
+
+pub const LOCAL_PLAYER: &str = "@local";
 
 #[derive(Debug, Clone)]
 struct External {
@@ -146,6 +149,7 @@ impl Engine {
             token_pending: std::sync::atomic::AtomicBool::new(false),
             audio: std::sync::Mutex::new(AudioSettings::default()),
             external: std::sync::Mutex::new(None),
+            local_queue: std::sync::Mutex::new((Vec::new(), 0)),
         });
         tokio::spawn(Arc::clone(&engine).mirror_remote());
         engine
@@ -678,7 +682,50 @@ impl Engine {
         self.external.lock().ok().and_then(|e| e.as_ref().map(|e| e.plugin.clone()))
     }
 
+    pub async fn play_local(&self, queue: Vec<ExternalTrack>, index: usize) -> anyhow::Result<()> {
+        let Some(track) = queue.get(index).cloned() else { anyhow::bail!("nothing to play") };
+        if let Ok(mut q) = self.local_queue.lock() {
+            *q = (queue, index);
+        }
+        self.load_external(LOCAL_PLAYER, track).await
+    }
+
+    async fn step_local(&self, delta: i64) -> bool {
+        let next = self.local_queue.lock().ok().and_then(|mut q| {
+            let target = q.1 as i64 + delta;
+            if target < 0 || target as usize >= q.0.len() {
+                return None;
+            }
+            q.1 = target as usize;
+            q.0.get(q.1).cloned()
+        });
+        match next {
+            Some(track) => {
+                let _ = self.load_external(LOCAL_PLAYER, track).await;
+                true
+            }
+            None => false,
+        }
+    }
+
     async fn external_event(&self, event: &str, message: String) {
+        if self.external_plugin().as_deref() == Some(LOCAL_PLAYER) {
+            match event {
+                "ended" | "next" => {
+                    if !self.step_local(1).await && event == "ended" {
+                        self.update(|s| s.is_playing = false).await;
+                    }
+                }
+                "previous" => {
+                    let position = self.state.read().await.position_ms;
+                    if position > 3000 || !self.step_local(-1).await {
+                        self.eval("rustifyExternal.seek(0)".into());
+                    }
+                }
+                _ => tracing::warn!("local file: {message}"),
+            }
+            return;
+        }
         let Some((plugin, seq)) = self.external.lock().ok().and_then(|mut e| {
             let e = e.as_mut()?;
             e.seq += 1;

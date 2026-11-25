@@ -130,6 +130,8 @@ pub struct TrackRow {
     pub explicit: bool,
     pub added: String,
     pub added_by: String,
+    #[serde(default)]
+    pub local_file: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

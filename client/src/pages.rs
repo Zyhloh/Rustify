@@ -8,7 +8,7 @@ use std::{
 };
 
 const BATCH: usize = 80;
-const TRACK_PX: u32 = 80;
+pub const TRACK_PX: u32 = 80;
 const HEADER_PX: u32 = 480;
 const LIKED: &str = "liked";
 
@@ -81,6 +81,10 @@ pub fn install(app: &App) {
     });
 }
 
+pub fn view_uris() -> Vec<String> {
+    PAGES.with(|p| (0..p.tracks.row_count()).filter_map(|i| p.tracks.row_data(i)).map(|t| t.uri.to_string()).collect())
+}
+
 pub fn track_in_view(uri: &str) -> bool {
     PAGES.with(|p| p.tracks_all.borrow().iter().any(|t| t.uri == uri))
 }
@@ -91,6 +95,12 @@ pub fn remove_track(uri: &str) {
         p.base.borrow_mut().retain(|t| t.uri != uri);
         if let Some(i) = (0..p.tracks.row_count()).find(|&i| p.tracks.row_data(i).is_some_and(|t| t.uri == uri)) {
             p.tracks.remove(i);
+            for j in i..p.tracks.row_count() {
+                if let Some(mut row) = p.tracks.row_data(j) {
+                    row.index = j as i32 + 1;
+                    p.tracks.set_row_data(j, row);
+                }
+            }
         }
     });
 }
@@ -122,7 +132,10 @@ fn show(app: &App) -> Route {
             });
             store.set_collection_query("".into());
             store.set_collection_sort(if kind == "collection" { "Recently added".into() } else { "Custom order".into() });
-            let known = if kind == "collection" { crate::state::library_card("liked") } else { crate::state::library_card(id) };
+            let known = match kind.as_str() {
+                "collection" => crate::state::library_card("liked"),
+                _ => crate::state::library_card(id),
+            };
             let mut header = CollectionData { kind: kind.as_str().into(), ..Default::default() };
             if let Some(card) = known {
                 let (label, rest) = card.subtitle.split_once(" • ").unwrap_or((card.subtitle.as_str(), ""));
@@ -140,7 +153,11 @@ fn show(app: &App) -> Route {
                 }
             }
             store.set_collection(header);
-            store.set_collection_color(if kind == "collection" { Color::from_rgb_u8(0x50, 0x38, 0xa0) } else { Color::from_rgb_u8(0x3a, 0x3a, 0x3a) });
+            store.set_collection_color(match kind.as_str() {
+                "collection" => Color::from_rgb_u8(0x50, 0x38, 0xa0),
+                "local" => Color::from_rgb_u8(0x1e, 0x6a, 0x4a),
+                _ => Color::from_rgb_u8(0x3a, 0x3a, 0x3a),
+            });
             store.set_collection_loading(true);
             store.set_page("collection".into());
         }
@@ -280,8 +297,8 @@ pub fn set_collection(app: &App, route: &Route, c: &Collection) -> Vec<String> {
         label: c.label.as_str().into(),
         title: c.title.as_str().into(),
         description: c.description.as_str().into(),
-        owner: c.owner.as_str().into(),
-        owner_is_me: c.owner_is_me,
+        owner: if c.kind == "local" { store.get_user_name() } else { c.owner.as_str().into() },
+        owner_is_me: c.owner_is_me || c.kind == "local",
         owner_id: c.owner_id.as_str().into(),
         owner_art: state::cached(&owner_key),
         owner_image_url: owner_key.as_str().into(),
@@ -378,8 +395,11 @@ pub fn sort_tracks(app: &App, key: &str) -> Vec<String> {
 }
 
 pub fn track_data(i: usize, t: &TrackRow, art: bool, added_by: bool) -> TrackData {
-    let key = if art {
-        t.image.as_deref().map(|u| images::key(u, TRACK_PX)).unwrap_or_default()
+    let local = t.uri.starts_with("spotify:local:");
+    let plugin_song = if local { crate::plugins::catalog_song(&t.uri) } else { None };
+    let image = plugin_song.as_ref().map(|s| s.image.clone()).filter(|i| !i.is_empty()).or_else(|| t.image.clone());
+    let key = if art || plugin_song.is_some() {
+        image.as_deref().map(|u| images::key(u, TRACK_PX)).unwrap_or_default()
     } else {
         String::new()
     };
@@ -396,6 +416,7 @@ pub fn track_data(i: usize, t: &TrackRow, art: bool, added_by: bool) -> TrackDat
         explicit: t.explicit,
         art: state::cached(&key),
         image_url: key.into(),
+        unavailable: local && !t.local_file && plugin_song.is_none(),
     }
 }
 

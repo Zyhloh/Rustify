@@ -289,7 +289,17 @@ export component Artwork inherits Rectangle {
         icon-size: root.width * 0.4;
     }
 
-    if root.card.kind != "collection" && root.card.kind != "episodes" && root.card.image-url == "": Icon {
+    if root.card.kind == "local": Rectangle {
+        background: @linear-gradient(135deg, #1e7a54 0%, #0f3d2b 100%);
+
+        Icon {
+            d: Icons.folder;
+            size: root.width * 0.4;
+            color: #ffffff;
+        }
+    }
+
+    if root.card.kind != "collection" && root.card.kind != "episodes" && root.card.kind != "local" && root.card.image-url == "": Icon {
         d: root.card.kind == "artist" ? Icons.person : Icons.note;
         size: root.width * 0.4;
         color: Theme.text-faint;

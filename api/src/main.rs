@@ -6,6 +6,7 @@ mod extras;
 mod guard;
 mod home;
 mod ids;
+mod local;
 mod models;
 mod native;
 mod oauth;
@@ -50,6 +51,8 @@ async fn main() -> anyhow::Result<()> {
     let auth = Arc::new(Auth::new(&config.spotify)?);
     let guard = guard::Guard::create(&config)?;
     let state = AppState::new(config, auth);
+    let local = state.local.clone();
+    tokio::task::spawn_blocking(move || local.scan());
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("api listening on {addr}");

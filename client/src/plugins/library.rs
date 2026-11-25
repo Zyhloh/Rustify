@@ -15,6 +15,7 @@ pub fn permissions_text(perms: &[String]) -> String {
             "theme" => "change Rustify's colors",
             "network" => "connect to the websites it lists",
             "audio" => "play audio from the websites it lists",
+            "playlists" => "add songs to your playlists",
             _ => "unknown",
         })
         .collect();
@@ -46,6 +47,7 @@ fn access(m: &manifest::Manifest) -> Vec<SharedString> {
                 "theme" => "Change Rustify's colors",
                 "network" => "Send and receive data from the websites listed below",
                 "audio" => "Play audio from the websites listed below through Rustify's player",
+                "playlists" => "Add its own songs to your Spotify playlists. They show up as local files, like in Spotify's app",
                 _ => continue,
             }
             .into(),

@@ -94,6 +94,11 @@ fn bind_store(app: &App, ctx: &Ctx) {
             player.invoke_toggle();
             return;
         }
+        let uris = pages::view_uris();
+        if collection.kind != "local" && !uris.is_empty() && uris.iter().all(|u| u.starts_with("spotify:local:")) {
+            c.play_local_in(uris, 0, Some((collection.uri.to_string(), collection.title.to_string())));
+            return;
+        }
         player.set_context_uri(collection.uri.clone());
         player.set_context_title(collection.title.clone());
         c.play(&collection.kind, &collection.context);
@@ -103,6 +108,12 @@ fn bind_store(app: &App, ctx: &Ctx) {
     store.on_play_track(move |track: TrackData| {
         let Some(app) = weak.upgrade() else { return };
         let collection = app.global::<Store>().get_collection();
+        if track.uri.starts_with("spotify:local:") {
+            let uris = pages::view_uris();
+            let index = uris.iter().position(|u| u.as_str() == track.uri.as_str()).unwrap_or(0);
+            c.play_local_in(uris, index, Some((collection.uri.to_string(), collection.title.to_string())));
+            return;
+        }
         let player = app.global::<Player>();
         player.set_context_uri(collection.uri.clone());
         player.set_context_title(collection.title.clone());
@@ -873,6 +884,9 @@ fn bind_player(app: &App, ctx: &Ctx) {
     let (c, weak) = (ctx.clone(), app.as_weak());
     player.on_save_pressed(move || {
         if let Some(app) = weak.upgrade() {
+            if !app.global::<Player>().get_likeable() {
+                return;
+            }
             c.save_pressed(&app);
         }
     });

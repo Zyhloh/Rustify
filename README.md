@@ -35,6 +35,7 @@ Rustify takes a different approach:
 - Spotify DJ, synced lyrics, credits and friend activity
 - 6-band equalizer with presets, volume normalization, Very High / High streaming quality
 - Miniplayer, and a full screen view with synced lyrics
+- Local files: play music from your own folders and add it to your Spotify playlists, like Spotify's app
 - Plugins and themes: install from a file, GitHub or drag and drop, with a safety check and a Spicetify compatibility layer
 - Disk caching and request pacing to stay within Spotify API rate limits
 
@@ -50,7 +51,7 @@ Plugins are plain JavaScript running in a sandboxed engine inside the app. They 
 - hide built-in buttons they replace
 - react to song changes, play and pause, and progress
 - control playback, read Spotify Web API data and keep their own settings
-- with permission, talk to their own web services and play audio streams through Rustify's player
+- with permission, talk to their own web services, play audio streams through Rustify's player, and add their own songs to your playlists
 
 Themes recolor the whole app and switch instantly. They're colors only and can't run code.
 

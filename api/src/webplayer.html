@@ -140,7 +140,7 @@ const external = (() => {
     load(src, meta, startMs, volume) {
       active = true;
       level = Math.max(0, Math.min(1, volume));
-      if (player) Promise.resolve(player.pause()).catch(() => {});
+      if (player) Promise.resolve(player.getCurrentState()).then(s => s && !s.paused && player.pause()).catch(() => {});
       start(true, { src, start: startMs });
       try {
         navigator.mediaSession.metadata = new MediaMetadata({ title: meta.title || "", artist: meta.artist || "", album: meta.album || "", artwork: meta.image ? [{ src: meta.image }] : [] });

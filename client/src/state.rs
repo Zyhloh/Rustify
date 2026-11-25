@@ -365,7 +365,7 @@ pub fn apply_player(app: &App, state: &models::PlayerState) -> Option<TrackChang
     player.set_voice(voice);
     player.set_dj(state.context.as_deref() == Some("spotify:playlist:37i9dQZF1EYkqdzj48dyYq") || voice);
     player.set_duration(track.duration_ms as f32);
-    if track.uri.starts_with("plugin:") && !player.get_context_uri().is_empty() {
+    if track.uri.starts_with("plugin:") && !track.id.starts_with("spotify:local:") && !player.get_context_uri().is_empty() {
         player.set_context_uri("".into());
         player.set_context_title("".into());
     }
@@ -390,6 +390,13 @@ pub fn apply_player(app: &App, state: &models::PlayerState) -> Option<TrackChang
     player.set_track_id(track.id.as_str().into());
     player.set_saved(false);
     player.set_track_uri(track.uri.as_str().into());
+    let alias = if track.id.starts_with("spotify:local:") {
+        track.id.clone()
+    } else {
+        track.uri.strip_prefix("plugin:").and_then(|rest| rest.split_once(':')).and_then(|(plugin, id)| crate::plugins::catalog_uri(plugin, id)).unwrap_or_default()
+    };
+    player.set_track_alias(alias.as_str().into());
+    player.set_likeable(track.uri.starts_with("spotify:track:") || track.uri.starts_with("spotify:episode:"));
     player.set_explicit(track.explicit);
     player.set_artists(
         track.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ").into(),

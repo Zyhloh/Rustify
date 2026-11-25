@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::{collections::BTreeMap, path::Path};
 
-pub const PERMISSIONS: [&str; 5] = ["player", "spotify", "theme", "network", "audio"];
+pub const PERMISSIONS: [&str; 6] = ["player", "spotify", "theme", "network", "audio", "playlists"];
 const MAX_HOSTS: usize = 20;
 const MAX_SCRIPT: u64 = 512 * 1024;
 pub const MAX_ICON: u64 = 256 * 1024;

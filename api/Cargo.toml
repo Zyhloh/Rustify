@@ -24,6 +24,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 url = "2.5.8"
 uuid = { version = "1.29.3", features = ["v4"] }
 wry = "0.57"
+lofty = "0.25.5"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }

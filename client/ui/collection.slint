@@ -49,12 +49,13 @@ export component TrackRow inherits Rectangle {
     in property <bool> liked-row: false;
     in property <bool> show-index: true;
     callback play();
-    property <bool> current: Player.track-uri != "" && Player.track-uri == root.data.uri;
-    property <bool> menu-open: Menu.open && Menu.track-id == root.data.id;
+    property <bool> current: Player.track-uri != "" && (Player.track-uri == root.data.uri || Player.track-alias == root.data.uri);
+    property <bool> menu-open: Menu.open && ((root.data.id != "" && Menu.track-id == root.data.id) || Menu.track-id == root.data.uri);
     property <bool> lit: ta.has-hover || root.menu-open;
 
     height: 52px;
     border-radius: 4px;
+    opacity: root.data.unavailable ? 0.45 : 1;
     background: ta.pressed ? #ffffff26 : root.lit ? #ffffff1a : transparent;
     animate background { duration: Theme.fast; }
 
@@ -116,6 +117,12 @@ export component TrackRow inherits Rectangle {
                 border-radius: 4px;
                 background: Theme.surface-high;
                 clip: true;
+
+                if root.data.image-url == "": Icon {
+                    d: Icons.note;
+                    size: 18px;
+                    color: Theme.text-faint;
+                }
 
                 Image {
                     width: 100%;
@@ -439,7 +446,17 @@ export component CollectionPage inherits Rectangle {
                             icon-size: root.art-size * 0.36;
                         }
 
-                        if Store.collection.kind != "collection" && Store.collection.image-url == "": Icon {
+                        if Store.collection.kind == "local": Rectangle {
+                            background: @linear-gradient(135deg, #1e7a54 0%, #0f3d2b 100%);
+
+                            Icon {
+                                d: Icons.folder;
+                                size: root.art-size * 0.36;
+                                color: #ffffff;
+                            }
+                        }
+
+                        if Store.collection.kind != "collection" && Store.collection.kind != "local" && Store.collection.image-url == "": Icon {
                             d: Icons.note;
                             size: root.art-size * 0.36;
                             color: Theme.text-faint;

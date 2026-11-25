@@ -39,6 +39,7 @@ export struct TrackData {
     explicit: bool,
     image-url: string,
     art: image,
+    unavailable: bool,
 }
 
 export struct ShowData {
@@ -360,6 +361,7 @@ export global Menu {
     in property <[PickerItem]> playlists;
     in property <string> sleep;
     in property <bool> removable;
+    in property <bool> local;
     in property <[MenuEntry]> plugin-items;
 
     callback action(string);
@@ -440,6 +442,8 @@ export global Player {
     in property <string> title;
     in property <string> artists;
     in property <string> track-uri;
+    in property <string> track-alias;
+    in property <bool> likeable: true;
     in property <string> track-id;
     in property <string> context-uri;
     in property <string> context-title;
@@ -604,6 +608,17 @@ export struct PluginLog {
     plugin: string,
     level: string,
     text: string,
+}
+
+export global LocalFiles {
+    in property <bool> enabled;
+    in property <[string]> folders;
+    in property <int> count;
+    in property <bool> scanning;
+    callback set-enabled(bool);
+    callback add-folder();
+    callback remove-folder(string);
+    callback rescan();
 }
 
 export global Plugins {

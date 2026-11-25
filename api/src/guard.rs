@@ -61,7 +61,7 @@ pub async fn check(State(guard): State<Guard>, request: Request, next: Next) -> 
     if !guard.host_ok(&request) {
         return Err(StatusCode::MISDIRECTED_REQUEST);
     }
-    if OPEN.contains(&request.uri().path()) || guard.key_ok(&request) {
+    if OPEN.contains(&request.uri().path()) || request.uri().path().starts_with("/local/stream/") || guard.key_ok(&request) {
         return Ok(next.run(request).await);
     }
     Err(StatusCode::UNAUTHORIZED)

@@ -135,7 +135,7 @@ export component PlayerBar inherits Rectangle {
             }
         }
 
-        if !Player.voice: LikeButton {
+        if !Player.voice && Player.likeable: LikeButton {
             y: 20px;
             liked: Player.saved;
             toggled => { Player.save-pressed(); }

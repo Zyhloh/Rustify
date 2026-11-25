@@ -57,6 +57,7 @@ pub enum UiOp {
     Hide { plugin: String, element: String, hidden: bool },
     Clipboard { plugin: String, text: String },
     Audio { plugin: String, payload: Value },
+    Catalog { plugin: String, songs: Vec<(String, String, String)> },
     Render { plugin: String, id: String, nodes: Vec<Value> },
     Open { plugin: String, id: String },
     Theme { plugin: String, colors: BTreeMap<String, String> },
@@ -72,6 +73,7 @@ pub type Sink = Arc<dyn Fn(UiOp) + Send + Sync>;
 pub enum Request {
     Spotify(String),
     Net { url: String, method: String, headers: Vec<(String, String)>, body: Option<String>, hosts: Vec<String> },
+    PlaylistAdd { plugin: String, playlist: String, title: String, artist: String, album: String, duration_ms: u32 },
 }
 
 impl std::fmt::Display for Request {
@@ -79,6 +81,7 @@ impl std::fmt::Display for Request {
         match self {
             Request::Spotify(path) => f.write_str(path),
             Request::Net { method, url, .. } => write!(f, "{method} {url}"),
+            Request::PlaylistAdd { playlist, title, .. } => write!(f, "add {title} to {playlist}"),
         }
     }
 }
@@ -109,6 +112,21 @@ struct Instance {
     strikes: u32,
     ctx: Context,
     rt: Runtime,
+}
+
+pub fn local_uri(artist: &str, album: &str, title: &str, duration_ms: u32) -> String {
+    let encode = |part: &str| -> String {
+        let mut out = String::new();
+        for b in part.as_bytes() {
+            match *b {
+                b' ' => out.push('+'),
+                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'*' => out.push(*b as char),
+                other => out.push_str(&format!("%{other:02X}")),
+            }
+        }
+        out
+    };
+    format!("spotify:local:{}:{}:{}:{}", encode(artist), encode(album), encode(title), duration_ms / 1000)
 }
 
 fn fail(message: impl Into<String>) -> Result<String, String> {
@@ -357,6 +375,30 @@ impl Shared {
                 self.ui(UiOp::Hide { plugin: id, element, hidden: arg(payload, "hidden").as_bool().unwrap_or(true) })?;
                 Ok(String::new())
             }
+            "library.register" => {
+                self.need("playlists")?;
+                let list = arg(payload, "songs").as_array().cloned().unwrap_or_default();
+                if list.len() > 5000 {
+                    return fail("register at most 5000 songs at a time");
+                }
+                let songs: Vec<(String, String, String)> = list
+                    .iter()
+                    .filter_map(|song| {
+                        let title = string(song, "title", 200);
+                        if title.trim().is_empty() {
+                            return None;
+                        }
+                        let duration = arg(song, "duration").as_f64().filter(|v| v.is_finite() && *v >= 0.0).unwrap_or(0.0).min(86_400_000.0) as u32;
+                        let uri = local_uri(&string(song, "artist", 200), &string(song, "album", 200), &title, duration);
+                        let image = string(song, "image", 2000);
+                        let image = if manifest::host_allowed(&self.hosts, &image) || crate::images::trusted(&image) { image } else { String::new() };
+                        Some((uri, image, string(song, "id", 100)))
+                    })
+                    .collect();
+                let count = songs.len();
+                self.ui(UiOp::Catalog { plugin: id, songs })?;
+                Ok(json!(count).to_string())
+            }
             "audio" => {
                 self.need("audio")?;
                 let action = string(payload, "action", 10);
@@ -443,6 +485,36 @@ impl Shared {
                 }
                 self.spotify_calls.push_back(now);
                 Ok(self.request(Request::Spotify(path)))
+            }
+            "library.add" => {
+                self.need("playlists")?;
+                let playlist = string(payload, "playlist", 64);
+                let playlist = playlist.strip_prefix("spotify:playlist:").unwrap_or(&playlist).to_owned();
+                if playlist.is_empty() || playlist.len() > 40 || !playlist.bytes().all(|b| b.is_ascii_alphanumeric()) {
+                    return Err("playlist must be a Spotify playlist id".into());
+                }
+                let song = arg(payload, "song");
+                let title = string(song, "title", 200);
+                if title.trim().is_empty() {
+                    return Err("a song needs a title".into());
+                }
+                let now = Instant::now();
+                while self.spotify_calls.front().is_some_and(|t| now.duration_since(*t) > Duration::from_secs(60)) {
+                    self.spotify_calls.pop_front();
+                }
+                if self.spotify_calls.len() >= SPOTIFY_PER_MINUTE {
+                    return Err("Spotify request limit reached (30 per minute)".into());
+                }
+                self.spotify_calls.push_back(now);
+                let duration_ms = arg(song, "duration").as_f64().filter(|v| v.is_finite() && *v >= 0.0).unwrap_or(0.0).min(86_400_000.0) as u32;
+                Ok(self.request(Request::PlaylistAdd {
+                    plugin: self.id.clone(),
+                    playlist,
+                    title,
+                    artist: string(song, "artist", 200),
+                    album: string(song, "album", 200),
+                    duration_ms,
+                }))
             }
             "net.fetch" => {
                 self.need("network")?;
@@ -1154,7 +1226,7 @@ mod tests {
         let fetch: Fetch = Arc::new(move |request, done| {
             let headers = match &request {
                 Request::Net { headers, .. } => headers.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(";"),
-                Request::Spotify(_) => String::new(),
+                _ => String::new(),
             };
             log.lock().unwrap().push(format!("{request} [{headers}]"));
             done(Ok(r#"{"status":200,"statusText":"OK","url":"https://api.example.com/songs","headers":{"content-type":"application/json"},"body":"{\"songs\":[1,2]}"}"#.into()))
@@ -1292,5 +1364,40 @@ mod tests {
         assert!(p.is_ok());
         assert_eq!(requests.lock().unwrap().as_slice(), ["GET https://api.example.com/me [authorization=Bearer abc]"]);
         drop(ops);
+    }
+
+    #[test]
+    fn local_uris_match_the_api_encoding() {
+        assert_eq!(local_uri("Juice WRLD", "Goodbye & Good Riddance", "Lucid Dreams", 239_000), "spotify:local:Juice+WRLD:Goodbye+%26+Good+Riddance:Lucid+Dreams:239");
+        let script = "console.log(Rustify.Library.localUri({ artist: 'Juice WRLD', album: 'Goodbye & Good Riddance', title: 'Lucid Dreams', duration: 239000 }));
+            console.log(Rustify.Library.localUri({ artist: \"Don't\", album: '(Live)!', title: 'é ~*', duration: 1500 }));";
+        let (p, ops) = plugin("uri", &[], script);
+        assert!(p.is_ok());
+        let l = logs(&ops);
+        assert_eq!(l[0], "spotify:local:Juice+WRLD:Goodbye+%26+Good+Riddance:Lucid+Dreams:239");
+        assert_eq!(l[1], local_uri("Don't", "(Live)!", "é ~*", 1500));
+    }
+
+    #[test]
+    fn playlist_entries_need_permission_and_valid_input() {
+        let (p, ops, requests, _) = net_plugin(&["audio"], "Rustify.Library.addToPlaylist('37i9dQZF1DXcBWIGoYBM5M', { title: 'x' }).catch(e => console.log('blocked ' + e.message))");
+        assert!(p.is_ok());
+        assert!(requests.lock().unwrap().is_empty());
+        assert!(logs(&ops).iter().any(|l| l.contains("blocked") && l.contains("playlists")), "{:?}", logs(&ops));
+
+        let script = "let bad = 0;
+            for (const id of ['../../x', 'a b', '', 'x'.repeat(60)]) Rustify.Library.addToPlaylist(id, { title: 'Song' }).catch(() => bad++);
+            Rustify.Library.addToPlaylist('spotify:playlist:37i9dQZF1DXcBWIGoYBM5M', { title: '' }).catch(() => bad++);
+            Rustify.Library.addToPlaylist('37i9dQZF1DXcBWIGoYBM5M', { title: 'Song', artist: 'Artist', album: 'Vault', duration: 200000, image: 'https://evil.test/x.jpg', id: 'v1' });
+            Rustify.Library.register([{ title: 'Other', artist: 'Artist', image: 'https://cdn.example.com/c.jpg', id: 'v2' }, { title: '' }]);
+            Promise.resolve().then(() => Promise.resolve()).then(() => console.log('bad ' + bad));";
+        let (p, ops, requests, _) = net_plugin(&["playlists", "network"], script);
+        assert!(p.is_ok());
+        assert_eq!(requests.lock().unwrap().as_slice(), ["add Song to 37i9dQZF1DXcBWIGoYBM5M []"]);
+        let ops = ops.lock().unwrap();
+        let catalogs: Vec<&Vec<(String, String, String)>> = ops.iter().filter_map(|o| if let UiOp::Catalog { songs, .. } = o { Some(songs) } else { None }).collect();
+        assert!(catalogs.iter().any(|c| c.iter().any(|(uri, image, id)| uri == "spotify:local:Artist:Vault:Song:200" && image.is_empty() && id == "v1")));
+        assert!(catalogs.iter().any(|c| c.len() == 1 && c[0].1 == "https://cdn.example.com/c.jpg" && c[0].2 == "v2"));
+        assert!(ops.iter().any(|o| matches!(o, UiOp::Log { text, .. } if text == "bad 5")));
     }
 }

@@ -124,7 +124,7 @@ export component ContextMenu inherits Rectangle {
     property <length> sub-width: 260px;
     property <length> extra: Menu.removable ? 40px : 0px;
     property <length> plugin-extra: Menu.plugin-items.length > 0 ? 9px + Menu.plugin-items.length * 40px : 0px;
-    property <length> menu-height: 9 * 40px + 3 * 9px + 8px + root.extra + root.plugin-extra;
+    property <length> menu-height: (Menu.local ? 40px + 8px : 9 * 40px + 3 * 9px + 8px) + root.extra + root.plugin-extra;
     property <length> mx: max(8px, min(Menu.x, root.width - root.menu-width - 8px));
     property <length> my: max(8px, min(Menu.y, root.height - root.menu-height - 8px));
     property <bool> sub-left: root.mx + root.menu-width + root.sub-width + 8px > root.width;
@@ -165,82 +165,84 @@ export component ContextMenu inherits Rectangle {
                 clicked => { Menu.action("remove"); }
             }
 
-            MenuItem {
-                liked-icon: true;
-                text: Menu.liked ? "Remove from your Liked Songs" : "Save to your Liked Songs";
-                entered => { Menu.sub = ""; }
-                clicked => { Menu.action("like"); }
-            }
-
-            MenuItem {
-                icon: Icons.queue;
-                text: "Add to queue";
-                entered => { Menu.sub = ""; }
-                clicked => { Menu.action("queue"); }
-            }
-
-            Separator { }
-
-            MenuItem {
-                icon: Icons.timer;
-                text: Menu.sleep != "" ? "Sleep timer · \{Menu.sleep}" : "Sleep timer";
-                submenu: true;
-                highlighted: Menu.sub == "sleep";
-                entered => { root.sub-anchor = 3 * 40px + 9px + root.extra; Menu.sub = "sleep"; }
-                clicked => { root.sub-anchor = 3 * 40px + 9px + root.extra; Menu.sub = "sleep"; }
-            }
-
-            Separator { }
-
-            MenuItem {
-                icon: Icons.radio;
-                text: "Go to song radio";
-                entered => { Menu.sub = ""; }
-                clicked => { Menu.action("radio"); }
-            }
-
-            MenuItem {
-                icon: Icons.person;
-                text: "Go to artist";
-                submenu: Menu.artists.length > 1;
-                highlighted: Menu.sub == "artist";
-                entered => {
-                    root.sub-anchor = 5 * 40px + 2 * 9px + root.extra;
-                    Menu.sub = Menu.artists.length > 1 ? "artist" : "";
+            if !Menu.local: VerticalLayout {
+                MenuItem {
+                    liked-icon: true;
+                    text: Menu.liked ? "Remove from your Liked Songs" : "Save to your Liked Songs";
+                    entered => { Menu.sub = ""; }
+                    clicked => { Menu.action("like"); }
                 }
-                clicked => {
-                    if Menu.artists.length > 1 {
+
+                MenuItem {
+                    icon: Icons.queue;
+                    text: "Add to queue";
+                    entered => { Menu.sub = ""; }
+                    clicked => { Menu.action("queue"); }
+                }
+
+                Separator { }
+
+                MenuItem {
+                    icon: Icons.timer;
+                    text: Menu.sleep != "" ? "Sleep timer · \{Menu.sleep}" : "Sleep timer";
+                    submenu: true;
+                    highlighted: Menu.sub == "sleep";
+                    entered => { root.sub-anchor = 3 * 40px + 9px + root.extra; Menu.sub = "sleep"; }
+                    clicked => { root.sub-anchor = 3 * 40px + 9px + root.extra; Menu.sub = "sleep"; }
+                }
+
+                Separator { }
+
+                MenuItem {
+                    icon: Icons.radio;
+                    text: "Go to song radio";
+                    entered => { Menu.sub = ""; }
+                    clicked => { Menu.action("radio"); }
+                }
+
+                MenuItem {
+                    icon: Icons.person;
+                    text: "Go to artist";
+                    submenu: Menu.artists.length > 1;
+                    highlighted: Menu.sub == "artist";
+                    entered => {
                         root.sub-anchor = 5 * 40px + 2 * 9px + root.extra;
-                        Menu.sub = "artist";
-                    } else if Menu.artists.length == 1 {
-                        Menu.action("artist:" + Menu.artists[0].id);
+                        Menu.sub = Menu.artists.length > 1 ? "artist" : "";
+                    }
+                    clicked => {
+                        if Menu.artists.length > 1 {
+                            root.sub-anchor = 5 * 40px + 2 * 9px + root.extra;
+                            Menu.sub = "artist";
+                        } else if Menu.artists.length == 1 {
+                            Menu.action("artist:" + Menu.artists[0].id);
+                        }
                     }
                 }
-            }
 
-            MenuItem {
-                icon: Icons.album;
-                text: "Go to album";
-                entered => { Menu.sub = ""; }
-                clicked => { Menu.action("album"); }
-            }
+                MenuItem {
+                    icon: Icons.album;
+                    text: "Go to album";
+                    entered => { Menu.sub = ""; }
+                    clicked => { Menu.action("album"); }
+                }
 
-            MenuItem {
-                icon: Icons.credits;
-                text: "View credits";
-                entered => { Menu.sub = ""; }
-                clicked => { Menu.action("credits"); }
-            }
+                MenuItem {
+                    icon: Icons.credits;
+                    text: "View credits";
+                    entered => { Menu.sub = ""; }
+                    clicked => { Menu.action("credits"); }
+                }
 
-            Separator { }
+                Separator { }
 
-            MenuItem {
-                icon: Icons.share;
-                text: "Share";
-                submenu: true;
-                highlighted: Menu.sub == "share";
-                entered => { root.sub-anchor = 8 * 40px + 3 * 9px + root.extra; Menu.sub = "share"; }
-                clicked => { root.sub-anchor = 8 * 40px + 3 * 9px + root.extra; Menu.sub = "share"; }
+                MenuItem {
+                    icon: Icons.share;
+                    text: "Share";
+                    submenu: true;
+                    highlighted: Menu.sub == "share";
+                    entered => { root.sub-anchor = 8 * 40px + 3 * 9px + root.extra; Menu.sub = "share"; }
+                    clicked => { root.sub-anchor = 8 * 40px + 3 * 9px + root.extra; Menu.sub = "share"; }
+                }
             }
 
             if Menu.plugin-items.length > 0: Separator { }
@@ -258,7 +260,7 @@ export component ContextMenu inherits Rectangle {
         x: root.sub-x;
         y: max(8px, min(root.my, root.height - self.height - 8px));
         width: root.sub-width;
-        height: min(400px, 4px + 40px + 40px + 9px + Menu.playlists.length * 40px + 8px);
+        height: min(400px, 4px + 40px + (Menu.local ? 0px : 40px + 9px) + Menu.playlists.length * 40px + 8px);
 
         VerticalLayout {
             padding: 4px;
@@ -295,13 +297,13 @@ export component ContextMenu inherits Rectangle {
                 }
             }
 
-            MenuItem {
+            if !Menu.local: MenuItem {
                 icon: Icons.plus;
                 text: "New playlist";
                 clicked => { Menu.create(); }
             }
 
-            Separator { }
+            if !Menu.local: Separator { }
 
             Scroller {
                 vertical-stretch: 1;

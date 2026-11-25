@@ -47,6 +47,7 @@ pub struct AppState {
     library_turn: tokio::sync::Mutex<()>,
     refreshing: std::sync::Mutex<std::collections::HashSet<&'static str>>,
     indexed_at: RwLock<Option<Instant>>,
+    pub local: Arc<crate::local::Library>,
 }
 
 const STALE_LIMIT: Duration = Duration::from_secs(24 * 3600);
@@ -100,6 +101,7 @@ impl AppState {
             library_turn: tokio::sync::Mutex::new(()),
             refreshing: std::sync::Mutex::new(Default::default()),
             indexed_at: RwLock::new(None),
+            local: Arc::new(crate::local::Library::load()),
         })
     }
 
@@ -296,6 +298,12 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/auth/library", post(auth_library))
         .route("/plugin/spotify", get(plugin_spotify))
         .route("/plugin/audio", post(plugin_audio))
+        .route("/plugin/playlist-add", post(plugin_playlist_add))
+        .route("/local/settings", get(local_settings).post(local_save))
+        .route("/local/rescan", post(local_rescan))
+        .route("/local/stream/{token}", get(local_stream))
+        .route("/local/play", post(local_play))
+        .route("/playlist/{id}/local", post(playlist_local))
         .route("/me", get(me))
         .route("/home", get(home_feed))
         .route("/library", get(library))
@@ -418,6 +426,211 @@ async fn plugin_audio(State(st): Shared, Json(b): Json<PluginAudioBody>) -> ApiR
     Ok(Json(json!({ "ok": true })))
 }
 
+fn local_collection(st: &AppState) -> Collection {
+    let tracks: Vec<collection::TrackRow> = st
+        .local
+        .tracks()
+        .into_iter()
+        .filter(|t| t.path.is_file())
+        .map(|t| collection::TrackRow {
+            id: String::new(),
+            uri: t.uri,
+            album_id: String::new(),
+            name: t.title,
+            artists: if t.artist.is_empty() { Vec::new() } else { vec![crate::models::ArtistRef { id: String::new(), name: t.artist }] },
+            album: t.album,
+            image: None,
+            duration: collection::format_duration(t.duration_ms as u64),
+            explicit: false,
+            added: String::new(),
+            added_by: String::new(),
+            local_file: true,
+        })
+        .collect();
+    let count = tracks.len();
+    Collection {
+        id: "files".into(),
+        uri: "local:files".into(),
+        context: "local".into(),
+        kind: "local".into(),
+        label: "Playlist".into(),
+        title: "Local Files".into(),
+        description: "Music files from the folders you chose in Settings.".into(),
+        meta: format!("{count} {}", if count == 1 { "song" } else { "songs" }),
+        show_album: true,
+        tracks,
+        ..Default::default()
+    }
+}
+
+async fn local_settings(State(st): Shared) -> ApiResult<Value> {
+    let settings = st.local.settings();
+    Ok(Json(json!({ "enabled": settings.enabled, "folders": settings.folders, "count": st.local.tracks().len() })))
+}
+
+async fn rescan(st: &Arc<AppState>) -> usize {
+    let local = st.local.clone();
+    let count = tokio::task::spawn_blocking(move || local.scan()).await.unwrap_or(0);
+    *st.library.write().await = None;
+    count
+}
+
+async fn local_save(State(st): Shared, Json(b): Json<crate::local::Settings>) -> ApiResult<Value> {
+    st.local.set_settings(b)?;
+    let count = rescan(&st).await;
+    Ok(Json(json!({ "ok": true, "count": count })))
+}
+
+async fn local_rescan(State(st): Shared) -> ApiResult<Value> {
+    let count = rescan(&st).await;
+    Ok(Json(json!({ "ok": true, "count": count })))
+}
+
+async fn local_stream(State(st): Shared, Path(token): Path<String>, headers: axum::http::HeaderMap) -> axum::response::Response {
+    use axum::{body::Body, http::StatusCode, response::IntoResponse};
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+    let Some(path) = st.local.path_for_token(&token) else { return StatusCode::NOT_FOUND.into_response() };
+    let Ok(mut file) = tokio::fs::File::open(&path).await else { return StatusCode::NOT_FOUND.into_response() };
+    let Ok(meta) = file.metadata().await else { return StatusCode::NOT_FOUND.into_response() };
+    let total = meta.len();
+    let range = headers
+        .get("range")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("bytes="))
+        .and_then(|v| v.split(',').next())
+        .and_then(|v| v.split_once('-'))
+        .map(|(a, b)| {
+            let start: u64 = a.parse().unwrap_or(0);
+            let end: u64 = b.parse().unwrap_or(total.saturating_sub(1));
+            (start, end.min(total.saturating_sub(1)))
+        });
+    let (start, end, status) = match range {
+        Some((start, end)) if start <= end && start < total => (start, end, StatusCode::PARTIAL_CONTENT),
+        Some(_) => return (StatusCode::RANGE_NOT_SATISFIABLE, [("content-range", format!("bytes */{total}"))]).into_response(),
+        None => (0, total.saturating_sub(1), StatusCode::OK),
+    };
+    if file.seek(std::io::SeekFrom::Start(start)).await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    let length = if total == 0 { 0 } else { end - start + 1 };
+    let stream = tokio_util_stream(file.take(length));
+    let mut response = axum::response::Response::new(Body::from_stream(stream));
+    *response.status_mut() = status;
+    let h = response.headers_mut();
+    h.insert("content-type", crate::local::content_type(&path).parse().unwrap());
+    h.insert("accept-ranges", "bytes".parse().unwrap());
+    h.insert("content-length", length.to_string().parse().unwrap());
+    h.insert("cache-control", "no-store".parse().unwrap());
+    if status == StatusCode::PARTIAL_CONTENT {
+        h.insert("content-range", format!("bytes {start}-{end}/{total}").parse().unwrap());
+    }
+    response
+}
+
+fn tokio_util_stream<R: tokio::io::AsyncRead + Send + Unpin + 'static>(reader: R) -> impl futures::Stream<Item = std::io::Result<Vec<u8>>> {
+    futures::stream::unfold(reader, |mut reader| async move {
+        use tokio::io::AsyncReadExt;
+        let mut buf = vec![0u8; 64 * 1024];
+        match reader.read(&mut buf).await {
+            Ok(0) => None,
+            Ok(n) => {
+                buf.truncate(n);
+                Some((Ok(buf), reader))
+            }
+            Err(e) => Some((Err(e), reader)),
+        }
+    })
+}
+
+#[derive(Deserialize)]
+struct LocalPlayBody {
+    uris: Vec<String>,
+    index: usize,
+}
+
+async fn local_play(State(st): Shared, Json(b): Json<LocalPlayBody>) -> ApiResult<Value> {
+    if b.uris.len() > 10_000 {
+        return Err(anyhow::anyhow!("too many songs").into());
+    }
+    let Some(start) = b.uris.get(b.index) else { return Err(anyhow::anyhow!("nothing to play").into()) };
+    let Some(first) = st.local.present(start) else {
+        if st.local.matching(start).is_some() {
+            let state = st.clone();
+            tokio::spawn(async move {
+                rescan(&state).await;
+            });
+            return Ok(Json(json!({ "handled": false, "missing": true })));
+        }
+        return Ok(Json(json!({ "handled": false })));
+    };
+    let mut queue = Vec::new();
+    let mut index = 0;
+    for (i, uri) in b.uris.iter().enumerate() {
+        let found = if i == b.index { Some(first.clone()) } else { st.local.present(uri) };
+        if let Some(track) = found {
+            if i == b.index {
+                index = queue.len();
+            }
+            queue.push(crate::player::ExternalTrack {
+                url: format!("/local/stream/{}", track.token),
+                title: track.title,
+                artist: track.artist,
+                album: track.album,
+                image: String::new(),
+                id: track.uri,
+                start_ms: 0,
+            });
+        }
+    }
+    st.engine.play_local(queue, index).await?;
+    Ok(Json(json!({ "handled": true })))
+}
+
+#[derive(Deserialize)]
+struct PlaylistLocalBody {
+    uri: String,
+    add: bool,
+}
+
+async fn playlist_local(State(st): Shared, Id(id): Id, Json(b): Json<PlaylistLocalBody>) -> ApiResult<Value> {
+    if b.uri.len() > 700 || crate::local::parse_uri(&b.uri).is_none() {
+        return Err(anyhow::anyhow!("not a local file").into());
+    }
+    let session = st.engine.session_or_wait(Duration::from_secs(20)).await.ok_or_else(|| anyhow::anyhow!("Spotify isn't connected yet"))?;
+    crate::native::playlist_change(&session, &id, &b.uri, b.add).await?;
+    st.collections.write().await.remove(&format!("playlist:{id}"));
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+struct PluginPlaylistBody {
+    plugin: String,
+    playlist: String,
+    title: String,
+    #[serde(default)]
+    artist: String,
+    #[serde(default)]
+    album: String,
+    #[serde(default)]
+    duration_ms: u32,
+}
+
+async fn plugin_playlist_add(State(st): Shared, Json(b): Json<PluginPlaylistBody>) -> ApiResult<Value> {
+    if !plugin_id_ok(&b.plugin) || !crate::ids::is_id(&b.playlist) {
+        return Err(anyhow::anyhow!("invalid playlist").into());
+    }
+    let clip = |t: &str| t.chars().filter(|c| !c.is_control()).take(200).collect::<String>();
+    let (title, artist, album) = (clip(&b.title), clip(&b.artist), clip(&b.album));
+    if title.trim().is_empty() {
+        return Err(anyhow::anyhow!("a song needs a title").into());
+    }
+    let uri = crate::local::local_uri(&artist, &album, &title, b.duration_ms.min(86_400_000));
+    let session = st.engine.session_or_wait(Duration::from_secs(20)).await.ok_or_else(|| anyhow::anyhow!("Spotify isn't connected yet"))?;
+    crate::native::playlist_change(&session, &b.playlist, &uri, true).await?;
+    st.collections.write().await.remove(&format!("playlist:{}", b.playlist));
+    Ok(Json(json!({ "ok": true, "uri": uri })))
+}
+
 async fn plugin_spotify(State(st): Shared, axum::extract::Query(q): axum::extract::Query<PluginQuery>) -> ApiResult<Value> {
     if !plugin_path_ok(&q.path) {
         return Err(anyhow::anyhow!("invalid plugin request").into());
@@ -502,9 +715,29 @@ async fn library(State(st): Shared) -> ApiResult<Vec<Card>> {
                 state.end_refresh("library");
             });
         }
-        return Ok(Json(items));
+        return Ok(Json(with_local(&st, items)));
     }
-    Ok(Json(build_library(&st).await?))
+    Ok(Json(with_local(&st, build_library(&st).await?)))
+}
+
+fn with_local(st: &AppState, mut items: Vec<Card>) -> Vec<Card> {
+    let count = st.local.tracks().len();
+    if count > 0 {
+        let at = items.iter().position(|c| c.kind == "collection").map(|i| i + 1).unwrap_or(0);
+        items.insert(
+            at,
+            Card {
+                id: "files".into(),
+                uri: "local:files".into(),
+                kind: "local".into(),
+                title: "Local Files".into(),
+                subtitle: format!("Playlist • {count} {}", if count == 1 { "song" } else { "songs" }),
+                image: None,
+                pinned: true,
+            },
+        );
+    }
+    items
 }
 
 async fn build_library(st: &Arc<AppState>) -> anyhow::Result<Vec<Card>> {
@@ -569,10 +802,23 @@ async fn artist(State(st): Shared, Id(id): Id) -> ApiResult<ArtistInfo> {
 }
 
 async fn collection_page(State(st): Shared, Path((kind, id)): Path<(String, String)>) -> ApiResult<Collection> {
-    Ok(Json(load_collection(&st, &kind, &id).await?))
+    if st.local.stale() {
+        let state = st.clone();
+        tokio::spawn(async move {
+            rescan(&state).await;
+        });
+    }
+    let mut page = load_collection(&st, &kind, &id).await?;
+    for t in page.tracks.iter_mut().filter(|t| t.uri.starts_with("spotify:local:")) {
+        t.local_file = st.local.present(&t.uri).is_some();
+    }
+    Ok(Json(page))
 }
 
 async fn load_collection(st: &AppState, kind: &str, id: &str) -> anyhow::Result<Collection> {
+    if kind == "local" {
+        return Ok(local_collection(st));
+    }
     if !crate::ids::is_id(id) || !matches!(kind, "playlist" | "album" | "collection") {
         anyhow::bail!("invalid collection");
     }
@@ -854,6 +1100,7 @@ async fn recent(State(st): Shared) -> ApiResult<Vec<crate::collection::TrackRow>
                         explicit: t.explicit,
                         added: String::new(),
                         added_by: String::new(),
+                        local_file: false,
                     })
                     .collect(),
             ))
@@ -964,7 +1211,13 @@ async fn delete_playlist(State(st): Shared, Id(id): Id) -> ApiResult<Value> {
     }
     st.index.remove_playlist(&id).await;
     st.collections.write().await.remove(&format!("playlist:{id}"));
-    *st.library.write().await = None;
+    let removed = format!("spotify:playlist:{id}");
+    let mut library = st.library.write().await;
+    if let Some((_, items)) = library.as_mut() {
+        items.retain(|c| c.uri != removed);
+        disk_save("library", &*items);
+    }
+    drop(library);
     Ok(Json(json!({ "ok": true })))
 }
 

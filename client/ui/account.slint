@@ -3,7 +3,7 @@ import { Icon, Icons } from "icons.slint";
 import { IconButton, PillButton, Scroller, PlayFab, Bleed, Chip, Slider } from "components.slint";
 import { Shelf } from "home.slint";
 import { TrackRow } from "collection.slint";
-import { Store, Player, Prefs, Panels, Plugins } from "store.slint";
+import { Store, Player, Prefs, Panels, Plugins, LocalFiles } from "store.slint";
 import { Chrome } from "topbar.slint";
 
 component MenuLine inherits Rectangle {
@@ -792,6 +792,87 @@ export component SettingsPage inherits Rectangle {
                             active: Prefs.on-close == choice.key;
                             clicked => { Prefs.on-close = choice.key; Prefs.changed(); }
                         }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 12px;
+                Group { text: "Local Files"; }
+                Row {
+                    label: "Show local files";
+                    note: "Play music files from this computer and add them to your playlists. They show up in Your Library as Local Files.";
+                    Switch {
+                        y: 9px;
+                        on: LocalFiles.enabled;
+                        toggled(v) => { LocalFiles.set-enabled(v); }
+                    }
+                }
+                if LocalFiles.enabled: VerticalLayout {
+                    spacing: 4px;
+
+                    Text {
+                        text: "Show songs from";
+                        color: Theme.text-dim;
+                        font-size: 14px;
+                    }
+
+                    for folder in LocalFiles.folders: HorizontalLayout {
+                        spacing: 12px;
+                        height: 40px;
+
+                        Icon {
+                            y: 10px;
+                            d: Icons.folder;
+                            size: 20px;
+                            color: Theme.text-dim;
+                        }
+
+                        Text {
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                            text: folder;
+                            color: Theme.text;
+                            font-size: 14px;
+                            overflow: elide;
+                        }
+
+                        IconButton {
+                            y: 4px;
+                            icon: Icons.close;
+                            ghost: true;
+                            clicked => { LocalFiles.remove-folder(folder); }
+                        }
+                    }
+
+                    if LocalFiles.folders.length == 0: Text {
+                        text: "No folders yet.";
+                        color: Theme.text-faint;
+                        font-size: 13px;
+                    }
+                }
+                if LocalFiles.enabled: HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+
+                    PillButton {
+                        outline: true;
+                        icon: Icons.plus;
+                        text: "Add a folder";
+                        clicked => { LocalFiles.add-folder(); }
+                    }
+
+                    PillButton {
+                        outline: true;
+                        text: LocalFiles.scanning ? "Scanning…" : "Rescan";
+                        clicked => { LocalFiles.rescan(); }
+                    }
+
+                    Text {
+                        vertical-alignment: center;
+                        text: LocalFiles.scanning ? "" : "\{LocalFiles.count} \{LocalFiles.count == 1 ? "song" : "songs"} found";
+                        color: Theme.text-faint;
+                        font-size: 13px;
                     }
                 }
             }
