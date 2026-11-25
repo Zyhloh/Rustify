@@ -95,6 +95,8 @@ struct State {
     section_model: Rc<VecModel<PluginSection>>,
     home_model: Rc<VecModel<PluginSection>>,
     dialog_model: Rc<VecModel<PluginSection>>,
+    search_model: Rc<VecModel<PluginSection>>,
+    queue_model: Rc<VecModel<PluginSection>>,
     row_buttons: Rc<VecModel<PluginControl>>,
     logs: Rc<VecModel<PluginLog>>,
     shown: Rc<VecModel<PluginInfo>>,
@@ -206,6 +208,8 @@ pub fn install(app: &App, ctx: &Ctx) {
         plugins.set_sections(ModelRc::from(s.section_model.clone()));
         plugins.set_home_sections(ModelRc::from(s.home_model.clone()));
         plugins.set_dialogs(ModelRc::from(s.dialog_model.clone()));
+        plugins.set_search_sections(ModelRc::from(s.search_model.clone()));
+        plugins.set_queue_sections(ModelRc::from(s.queue_model.clone()));
         plugins.set_row_buttons(ModelRc::from(s.row_buttons.clone()));
         plugins.set_logs(ModelRc::from(s.logs.clone()));
         plugins.set_shown(ModelRc::from(s.shown.clone()));
@@ -557,6 +561,8 @@ fn rebuild_sections(s: &State) {
     s.section_model.set_vec(rows("now-playing"));
     s.home_model.set_vec(rows("home"));
     s.dialog_model.set_vec(rows("dialog"));
+    s.search_model.set_vec(rows("search"));
+    s.queue_model.set_vec(rows("queue"));
 }
 
 fn sync_hidden(app: &App) {
@@ -595,7 +601,7 @@ fn refresh(app: &App) {
         s.found
             .iter()
             .filter_map(|f| f.manifest.as_ref())
-            .filter(|m| s.running.contains(&m.id) && m.permissions.iter().any(|p| p == "audio"))
+            .filter(|m| s.running.contains(&m.id) && m.permissions.iter().any(|p| p == "audio" || p == "network"))
             .flat_map(|m| m.network.iter().cloned())
             .collect()
     });
@@ -808,8 +814,8 @@ fn apply(app: &App, op: UiOp) {
                 if remove {
                     s.pages.remove(&key);
                     s.blocks.remove(&key);
-                } else if s.pages.keys().filter(|(p, _)| *p == plugin).count() >= 4 && !s.pages.contains_key(&key) {
-                    log(&s, &plugin, "warn", "a plugin can add at most 4 pages");
+                } else if s.pages.keys().filter(|(p, _)| *p == plugin).count() >= 16 && !s.pages.contains_key(&key) {
+                    log(&s, &plugin, "warn", "a plugin can add at most 16 pages");
                 } else {
                     s.page_links.push(PluginPageLink { plugin: plugin.as_str().into(), id: id.as_str().into(), title: title.as_str().into(), icon: icon.as_str().into() });
                     s.pages.insert(key, (title, icon, handle));
@@ -1076,6 +1082,14 @@ pub fn player_state(state: &crate::models::PlayerState) {
     }
     if state.is_playing {
         send(Cmd::Emit("onprogress".into(), snapshot));
+    }
+}
+
+pub fn search_changed(query: &str, filter: &str) {
+    let running = STATE.with(|s| !s.borrow().running.is_empty());
+    if running {
+        let query: String = query.chars().take(200).collect();
+        send(Cmd::Emit("search".into(), json!({ "query": query, "filter": filter }).to_string()));
     }
 }
 

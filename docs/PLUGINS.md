@@ -162,7 +162,7 @@ Adds an entry to the "..." and right-click menus. `types` is a list of `track`, 
 const page = Rustify.UI.Page(id, title, icon)
 ```
 
-Adds a page, listed in the app menu (top left "..."). See [Pages and blocks](#pages-and-blocks).
+Adds a page, listed in the app menu (top left "..."). A plugin can add 16 pages. See [Pages and blocks](#pages-and-blocks).
 
 ```js
 const section = Rustify.UI.NowPlaying.Section(id, title)
@@ -178,6 +178,13 @@ const card = Rustify.UI.Home.Section(id, title)
 ```
 
 Same as above, shown on the Home page below the filter chips.
+
+```js
+const results = Rustify.UI.Search.Section("vault", "From the vault");
+Rustify.on("search", ({ query, filter }) => results.render(query ? findRows(query) : []));
+```
+
+Shows your own results on Rustify's search page, above Spotify's. The `search` event fires every time the search changes. Render an empty list to hide the section.
 
 ```js
 const button = Rustify.UI.TrackRow.Button(label, icon, (button, track) => { ... })
@@ -221,7 +228,8 @@ Needs the `network` permission. `fetch` and `Rustify.fetch` work like the browse
 - Only `https://` addresses on the websites in the manifest's `network` list, on the default port.
 - Addresses that point to the user's own computer or local network are refused, even through DNS tricks or redirects.
 - Redirects are followed only within the listed websites.
-- Cookies are never sent or stored. `Cookie`, `Authorization`, `Host`, `Origin` and `Referer` headers are dropped.
+- `Authorization` headers are allowed, so plugins can sign in to their own service. They're dropped if a redirect leads to a different website.
+- Cookies are never sent or stored. `Cookie`, `Host`, `Origin` and `Referer` headers are dropped.
 - Requests time out after 20 seconds. Bodies are limited to 1 MB going out and 5 MB coming back.
 - 120 requests per minute.
 
@@ -250,7 +258,9 @@ Needs the `audio` permission, and the stream must be on a website in `network`. 
 - Spotify pauses while plugin audio plays. Starting anything from Spotify stops the plugin's audio.
 - Rustify can't know your playlist, so Next and Previous (buttons and media keys) are sent to the plugin as `next` and `previous` events. Load the next track yourself.
 
-Also available: `play()`, `pause()`, `toggle()`, `seek(ms)`, `stop()`, and `playing`, `position` and `duration`. Code written for the browser's `new Audio(url)` also works: `play()`, `pause()`, `currentTime`, `duration`, `paused` and the `play`, `pause`, `timeupdate`, `ended` and `error` events. Set `title`, `artist` and `artwork` on it to show them in the player bar.
+Also available: `play()`, `pause()`, `toggle()`, `seek(ms)`, `stop()`, and `playing`, `position` and `duration`.
+
+`Rustify.Audio.setQueue(items, title)` shows your own up-next list in Rustify's queue panel. Items are `{ id, title, artist, image }`. Clicking one sends a `select` event with its `id`. Pass an empty list to remove it. Code written for the browser's `new Audio(url)` also works: `play()`, `pause()`, `currentTime`, `duration`, `paused` and the `play`, `pause`, `timeupdate`, `ended` and `error` events. Set `title`, `artist` and `artwork` on it to show them in the player bar.
 
 The current track's URI is `plugin:<your id>:<track id>`, so `Rustify.Player.data` and events tell you when your audio is playing.
 
@@ -283,6 +293,20 @@ Rustify.plugin                     // this plugin's id
 
 A page is a list of blocks. Call `render` with the full list whenever something changes. Rustify updates only what is needed.
 
+Pages, sections and dialogs also accept React-style elements made with `Spicetify.React.createElement` (or JSX compiled to `Spicetify.ReactJSX`), including `useState` and the other hooks. Rustify turns them into native blocks:
+
+| Element | Becomes |
+| --- | --- |
+| `h1` to `h3` | heading |
+| `p`, `span`, `code`, `label`, `li` | text |
+| `button` | button (primary when it has a filled `background` style) |
+| any element with `onClick` | clickable row: the first text is the title, the rest the subtitle, and the first `img` inside is the picture |
+| `img` | image |
+| `hr` | divider |
+| checkbox `input` | toggle |
+
+CSS is ignored, so the result always matches Rustify. Images must be Spotify artwork or come from a website in your `network` list.
+
 ```js
 const page = Rustify.UI.Page("stats", "Listening stats", "bolt");
 
@@ -314,7 +338,7 @@ page.remove();
 | `row` | `id`, `text`, `sub`, `image` | `(id)` on click |
 | `image` | `image` | |
 
-Images must be Spotify artwork URLs (`i.scdn.co` and the other Spotify image hosts). Other hosts are ignored. A page holds up to 300 blocks.
+Images must be Spotify artwork URLs, or come from a website in the plugin's `network` list. Other hosts are ignored. A page holds up to 300 blocks.
 
 ## Themes
 
@@ -440,8 +464,8 @@ Plugins can only reach what the `Rustify` API exposes. They have no file system,
 | Storage | 1 MB |
 | Buttons | 4 in the top bar, 4 in the player bar |
 | Menu items | 8 |
-| Pages | 4 |
-| Now-playing and Home sections | 3 of each, with up to 100 blocks each |
+| Pages | 16 |
+| Now-playing, Home and search sections | 3 of each, with up to 100 blocks each |
 | Track row buttons | 2 per plugin, 4 in total |
 
 Each plugin runs in its own engine instance on a background thread, so a slow plugin cannot freeze the interface. A plugin that exceeds its time budget three times is stopped and marked as failed in Settings.
@@ -451,3 +475,9 @@ Each plugin runs in its own engine instance on a background thread, so a slow pl
 Turn on **Developer mode** under Settings, Plugins and themes. Each plugin's page then shows a console with its `console` output, errors with stack traces, and messages from Rustify, such as rejected calls or exceeded limits.
 
 Save a file and the plugin reloads within a couple of seconds.
+
+## What plugins can't do
+
+- Change Spotify's own data. Spotify playlists, Liked Songs and the Spotify queue only hold Spotify tracks, so plugin songs can't be added to them. Keep your own playlists and library in plugin storage or on your server, show them on your pages, and use `Rustify.Audio.setQueue` for up next.
+- Edit Rustify's screens directly. Use pages, sections, dialogs, buttons and menu items.
+- Use CSS. Themes and `Rustify.Theme.set` change colors and corner rounding everywhere at once.

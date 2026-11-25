@@ -180,11 +180,12 @@
   const section = place => (id, title) => {
     const sectionId = text(id, 40);
     let actionHandler = null;
-    const key = handle(event => actionHandler && actionHandler(event.id, event.value));
+    const view = renderer(nodes => call("ui.section.render", { id: sectionId, nodes }), 100);
+    const key = handle(event => view.handle(event.id) || (actionHandler && actionHandler(event.id, event.value)));
     call("ui.section", { id: sectionId, place, title: text(title, 60), handle: key });
     return {
-      render(nodes) {
-        call("ui.section.render", { id: sectionId, nodes: normalize(nodes, 100) });
+      render(content) {
+        view.set(content);
       },
       onAction(fn) {
         actionHandler = typeof fn === "function" ? fn : null;
@@ -241,16 +242,33 @@
         const tag = node.type;
         const props = node.props || {};
         if (tag === "button") {
-          const id = "b" + actions.length;
+          const id = "r" + actions.length;
           actions.push(props.onClick);
           const bg = String((props.style || {}).background || "");
           blocks.push({ type: "button", id, text: textOf(node.children), primary: bg !== "" && bg !== "transparent" && bg !== "none" });
           return;
         }
         if (tag === "input" && props.type === "checkbox") {
-          const id = "b" + actions.length;
+          const id = "r" + actions.length;
           actions.push(() => props.onChange && props.onChange({ target: { checked: !props.checked } }));
           blocks.push({ type: "toggle", id, text: props["aria-label"] || "", checked: !!props.checked });
+          return;
+        }
+        if (typeof props.onClick === "function" && tag !== "a") {
+          const id = "r" + actions.length;
+          actions.push(props.onClick);
+          const kids = node.children || [];
+          const findImg = list => {
+            for (const k of list) {
+              if (!k || typeof k !== "object") continue;
+              if (k.type === "img") return k.props && k.props.src;
+              const inner = findImg(k.children || []);
+              if (inner) return inner;
+            }
+            return "";
+          };
+          const parts = kids.map(textOf).map(t => t.trim()).filter(Boolean);
+          blocks.push({ type: "row", id, text: parts[0] || textOf(kids), sub: parts.slice(1).join(" • "), image: findImg(kids) || "" });
           return;
         }
         if (tag === "img") {
@@ -281,15 +299,12 @@
     return { Fragment, createElement, useState, useEffect, useRef, useMemo, useCallback, toBlocks, textOf, setRender(fn) { rerender = fn; }, begin(slots) { hooks = slots; hookIndex = 0; } };
   })();
 
-  let dialogCount = 0;
-  const dialog = (title, content) => {
-    const id = "popup" + ++dialogCount;
-    const card = section("dialog")(id, title);
+  const renderer = (sendBlocks, max) => {
     const slots = [];
     let actions = [];
-    let open = true;
+    let content = null;
     const render = () => {
-      if (!open) return;
+      if (content === null) return;
       actions = [];
       let blocks;
       if (Array.isArray(content)) blocks = content;
@@ -297,31 +312,47 @@
       else {
         reactShim.begin(slots);
         reactShim.setRender(render);
-        blocks = reactShim.toBlocks(content, actions);
-        reactShim.setRender(null);
-      }
-      card.render(blocks);
-    };
-    card.onAction(actionId => {
-      const fn = actions[Number(String(actionId).slice(1))];
-      if (typeof fn === "function") {
-        reactShim.setRender(render);
         try {
-          fn({ preventDefault() {}, stopPropagation() {}, target: {} });
+          blocks = reactShim.toBlocks(content, actions);
         } finally {
           reactShim.setRender(null);
         }
       }
-      render();
-    });
-    render();
+      sendBlocks(normalize(blocks, max));
+    };
     return {
-      update(next) {
+      set(next) {
         content = next;
         render();
       },
+      handle(actionId) {
+        const match = /^r(\d+)$/.exec(String(actionId));
+        if (!match || Array.isArray(content) || typeof content === "string") return false;
+        const fn = actions[Number(match[1])];
+        if (typeof fn === "function") {
+          reactShim.setRender(render);
+          try {
+            fn({ preventDefault() {}, stopPropagation() {}, target: {} });
+          } finally {
+            reactShim.setRender(null);
+          }
+        }
+        render();
+        return true;
+      },
+    };
+  };
+
+  let dialogCount = 0;
+  const dialog = (title, content) => {
+    const id = "popup" + ++dialogCount;
+    const card = section("dialog")(id, title);
+    card.render(content);
+    return {
+      update(next) {
+        card.render(next);
+      },
       close() {
-        open = false;
         card.remove();
       },
     };
@@ -333,11 +364,12 @@
   const page = (id, title, iconName) => {
     const pageId = text(id, 40);
     let actionHandler = null;
-    const key = handle(event => actionHandler && actionHandler(event.id, event.value));
+    const view = renderer(nodes => call("ui.render", { id: pageId, nodes }), 300);
+    const key = handle(event => view.handle(event.id) || (actionHandler && actionHandler(event.id, event.value)));
     call("ui.page", { id: pageId, title: text(title, 60), icon: icon(iconName), handle: key });
     return {
-      render(nodes) {
-        call("ui.render", { id: pageId, nodes: normalize(nodes, 300) });
+      render(content) {
+        view.set(content);
       },
       onAction(fn) {
         actionHandler = typeof fn === "function" ? fn : null;
@@ -413,6 +445,7 @@
   const selfId = call("info", null).plugin;
   const ownsTrack = () => !!(state.track && String(state.track.uri || "").startsWith("plugin:" + selfId + ":"));
   const audioListeners = new Map();
+  let queueCard = null;
   const audioEmit = (event, data) => {
     for (const cb of [...(audioListeners.get(event) || [])]) {
       try {
@@ -431,6 +464,19 @@
     toggle: () => call("audio", { action: "toggle" }),
     seek: ms => call("audio", { action: "seek", value: Math.max(0, Number(ms) || 0) }),
     stop: () => call("audio", { action: "stop" }),
+    setQueue: (items, title) => {
+      const list = (Array.isArray(items) ? items : []).slice(0, 100);
+      if (!list.length) {
+        if (queueCard) queueCard.remove();
+        queueCard = null;
+        return;
+      }
+      if (!queueCard) {
+        queueCard = section("queue")("queue", text(title || "Next up", 60));
+        queueCard.onAction(id => audioEmit("select", { event: "select", id: String(id).replace(/^q:/, "") }));
+      }
+      queueCard.render(list.map(t => ({ type: "row", id: "q:" + text(t.id, 60), text: text(t.title, 200), sub: text(t.artist, 200), image: text(t.image, 500) })));
+    },
     get playing() {
       return ownsTrack() && state.isPlaying;
     },
@@ -525,6 +571,7 @@
       Page: page,
       NowPlaying: Object.freeze({ Section: section("now-playing") }),
       Home: Object.freeze({ Section: section("home") }),
+      Search: Object.freeze({ Section: section("search") }),
       Dialog: Object.freeze({
         show: (title, content) => {
           if (openDialog) openDialog.close();

@@ -704,6 +704,7 @@ impl Ctx {
         let query = store.get_search_query().trim().to_string();
         let filter = store.get_search_filter().to_string();
         let generation = self.search_gen.fetch_add(1, Ordering::SeqCst) + 1;
+        crate::plugins::search_changed(&query, &filter);
         if query.is_empty() {
             crate::search::clear_results(app);
             return;

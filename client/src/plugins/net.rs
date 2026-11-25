@@ -46,6 +46,7 @@ async fn resolve(host: &str) -> Result<Vec<SocketAddr>, String> {
 }
 
 pub async fn fetch(url: String, method: String, headers: Vec<(String, String)>, body: Option<String>, hosts: Vec<String>) -> Result<String, String> {
+    let first_host = reqwest::Url::parse(&url).ok().and_then(|u| u.host_str().map(str::to_ascii_lowercase)).unwrap_or_default();
     let mut url = url;
     let mut method = method;
     let mut body = body;
@@ -66,7 +67,11 @@ pub async fn fetch(url: String, method: String, headers: Vec<(String, String)>, 
             .map_err(|e| e.to_string())?;
         let verb = reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| "invalid method".to_string())?;
         let mut request = client.request(verb, parsed.clone());
+        let same_host = host.eq_ignore_ascii_case(&first_host);
         for (k, v) in &headers {
+            if k == "authorization" && !same_host {
+                continue;
+            }
             request = request.header(k.as_str(), v.as_str());
         }
         if let Some(b) = &body {

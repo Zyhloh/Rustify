@@ -1,7 +1,8 @@
 import { Theme } from "theme.slint";
 import { Icon, Icons } from "icons.slint";
 import { IconButton, Scroller, EqBars } from "components.slint";
-import { Store, Player, Shell, Panels, TrackData, DeviceData, FriendData } from "store.slint";
+import { Store, Player, Shell, Panels, TrackData, DeviceData, FriendData, Plugins } from "store.slint";
+import { Block } from "plugins.slint";
 
 component PanelHeader inherits HorizontalLayout {
     in property <string> title;
@@ -210,6 +211,32 @@ export component QueuePanel inherits Rectangle {
                 padding-bottom: 16px;
                 spacing: 4px;
 
+                for section in Plugins.queue-sections: Rectangle {
+                    visible: Panels.queue-tab == "queue";
+                    border-radius: Theme.radius;
+                    background: transparent;
+                    height: queue-body.preferred-height;
+
+                    queue-body := VerticalLayout {
+                        padding: 8px;
+                        spacing: 10px;
+
+                        Text {
+                            text: section.title;
+                            color: Theme.text;
+                            font-size: 16px;
+                            font-weight: 700;
+                            overflow: elide;
+                        }
+
+                        for b in section.blocks: Block {
+                            data: b;
+                            plugin: section.plugin;
+                            section: section.id;
+                        }
+                    }
+                }
+
                 if Panels.queue-tab == "queue" && Panels.has-queue-now: VerticalLayout {
                     spacing: 4px;
                     HorizontalLayout { padding-left: 8px; height: 40px; Heading { vertical-alignment: center; text: "Now playing"; } }
@@ -236,7 +263,7 @@ export component QueuePanel inherits Rectangle {
                     }
                 }
 
-                if Panels.queue-tab == "queue" && !Panels.queue-loading && Panels.queue.length == 0 && !Panels.has-queue-now: VerticalLayout {
+                if Panels.queue-tab == "queue" && !Panels.queue-loading && Panels.queue.length == 0 && !Panels.has-queue-now && Plugins.queue-sections.length == 0: VerticalLayout {
                     padding-top: 80px;
                     padding-left: 24px;
                     padding-right: 24px;

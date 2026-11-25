@@ -22,7 +22,7 @@ const UI_OPS_PER_SECOND: u32 = 120;
 const SPOTIFY_PER_MINUTE: usize = 30;
 const NET_PER_MINUTE: usize = 120;
 const NET_BODY_LIMIT: usize = 1024 * 1024;
-const BLOCKED_HEADERS: [&str; 9] = ["host", "cookie", "authorization", "proxy-authorization", "connection", "content-length", "transfer-encoding", "origin", "referer"];
+const BLOCKED_HEADERS: [&str; 8] = ["host", "cookie", "proxy-authorization", "connection", "content-length", "transfer-encoding", "origin", "referer"];
 pub const HIDEABLE: [&str; 8] = [
     "friends-button", "news-button", "now-playing-button", "lyrics-button", "queue-button", "devices-button", "mini-player-button", "fullscreen-button",
 ];
@@ -328,8 +328,8 @@ impl Shared {
                     return fail("section id must be 1-40 characters of a-z, 0-9, - and _");
                 }
                 let place = string(payload, "place", 20);
-                if !matches!(place.as_str(), "now-playing" | "home" | "dialog") {
-                    return fail("sections can go in \"now-playing\", \"home\" or \"dialog\"");
+                if !matches!(place.as_str(), "now-playing" | "home" | "search" | "queue" | "dialog") {
+                    return fail("sections can go in \"now-playing\", \"home\", \"search\", \"queue\" or \"dialog\"");
                 }
                 self.ui(UiOp::Section {
                     plugin: id,
@@ -1134,11 +1134,11 @@ mod tests {
         assert_eq!(first[2]["primary"], true);
         assert_eq!(first[3]["primary"], false);
 
-        p.call("__action", handle.clone(), Some(r#"{"id":"b0","value":""}"#.into())).unwrap();
+        p.call("__action", handle.clone(), Some(r#"{"id":"r0","value":""}"#.into())).unwrap();
         assert!(ops.lock().unwrap().iter().any(|o| matches!(o, UiOp::Clipboard { text, .. } if text == "some command")));
         assert_eq!(renders(&ops).last().unwrap()[2]["text"], "Copied");
 
-        p.call("__action", handle, Some(r#"{"id":"b1","value":""}"#.into())).unwrap();
+        p.call("__action", handle, Some(r#"{"id":"r1","value":""}"#.into())).unwrap();
         assert_eq!(p.shared.borrow().storage.get("snooze").map(String::as_str), Some("1"));
         assert!(ops.lock().unwrap().iter().any(|o| matches!(o, UiOp::Section { id, remove: true, .. } if *id == key)));
     }
@@ -1152,7 +1152,11 @@ mod tests {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let log = requests.clone();
         let fetch: Fetch = Arc::new(move |request, done| {
-            log.lock().unwrap().push(request.to_string());
+            let headers = match &request {
+                Request::Net { headers, .. } => headers.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(";"),
+                Request::Spotify(_) => String::new(),
+            };
+            log.lock().unwrap().push(format!("{request} [{headers}]"));
             done(Ok(r#"{"status":200,"statusText":"OK","url":"https://api.example.com/songs","headers":{"content-type":"application/json"},"body":"{\"songs\":[1,2]}"}"#.into()))
         });
         let (tx, rx) = mpsc::channel();
@@ -1184,7 +1188,7 @@ mod tests {
             Promise.resolve().then(() => Promise.resolve()).then(() => console.log('blocked ' + out.length));";
         let (p, ops, requests, rx) = net_plugin(&["network"], script);
         let mut p = p.unwrap();
-        assert_eq!(requests.lock().unwrap().as_slice(), ["POST https://api.example.com/songs"]);
+        assert_eq!(requests.lock().unwrap().as_slice(), ["POST https://api.example.com/songs [x-key=a]"]);
         while let Ok(Cmd::Resolve { id, ok, json, .. }) = rx.try_recv() {
             p.call_resolve(id, ok, json).unwrap();
         }
@@ -1219,5 +1223,74 @@ mod tests {
         let l = logs(&ops);
         assert!(l.iter().any(|x| x == "bad 2"), "{l:?}");
         assert!(l.iter().any(|x| x == "next next"), "{l:?}");
+    }
+
+    #[test]
+    fn react_pages_search_and_queue() {
+        let script = r##"
+            const h = Spicetify.React.createElement;
+            const page = Rustify.UI.Page("browse", "Browse", "list");
+            function Browse() {
+                const [picked, setPicked] = Spicetify.React.useState("none");
+                return h("div", null,
+                    h("h2", null, "Eras"),
+                    h("div", { onClick: () => setPicked("era-1") }, h("img", { src: "https://i.scdn.co/image/abc" }), h("span", null, "Era One"), h("span", null, "12 songs")),
+                    h("p", null, "Picked " + picked));
+            }
+            page.render(h(Browse));
+            page.onAction(id => console.log("plain " + id));
+            const results = Rustify.UI.Search.Section("vault", "From the vault");
+            Rustify.on("search", ({ query }) => results.render([{ type: "row", id: "s1", text: "Result for " + query }]));
+            Rustify.Audio.setQueue([{ id: "a", title: "Next song", artist: "Artist" }], "Up next");
+            Rustify.Audio.on("select", e => console.log("select " + e.id));
+            for (let i = 0; i < 15; i++) Rustify.UI.Page("p" + i, "P" + i, "list");
+        "##;
+        let (p, ops, _, _) = net_plugin(&["audio"], script);
+        let mut p = p.unwrap();
+        let (page_handle, queue_handle) = {
+            let ops = ops.lock().unwrap();
+            let page = ops.iter().find_map(|o| match o {
+                UiOp::Page { id, handle, .. } if id == "browse" => Some(handle.clone()),
+                _ => None,
+            });
+            let queue = ops.iter().find_map(|o| match o {
+                UiOp::Section { place, handle, .. } if place == "queue" => Some(handle.clone()),
+                _ => None,
+            });
+            assert!(ops.iter().any(|o| matches!(o, UiOp::Section { place, title, .. } if place == "search" && title == "From the vault")));
+            assert_eq!(ops.iter().filter(|o| matches!(o, UiOp::Page { remove: false, .. })).count(), 16);
+            (page.unwrap(), queue.unwrap())
+        };
+        let page_nodes = |ops: &Arc<Mutex<Vec<UiOp>>>| -> Vec<Value> {
+            ops.lock().unwrap().iter().rev().find_map(|o| if let UiOp::Render { nodes, .. } = o { Some(nodes.clone()) } else { None }).unwrap()
+        };
+        let first = page_nodes(&ops);
+        assert_eq!(first[0]["type"], "heading");
+        assert_eq!(first[1]["type"], "row");
+        assert_eq!(first[1]["text"], "Era One");
+        assert_eq!(first[1]["sub"], "12 songs");
+        assert_eq!(first[1]["image"], "https://i.scdn.co/image/abc");
+        assert_eq!(first[2]["text"], "Picked none");
+
+        p.call("__action", page_handle.clone(), Some(r#"{"id":"r0","value":""}"#.into())).unwrap();
+        assert_eq!(page_nodes(&ops)[2]["text"], "Picked era-1");
+        p.call("__action", page_handle, Some(r#"{"id":"custom","value":""}"#.into())).unwrap();
+
+        p.call("__emit", "search".into(), Some(r#"{"query":"lucid","filter":""}"#.into())).unwrap();
+        assert!(ops.lock().unwrap().iter().any(|o| matches!(o, UiOp::SectionRender { nodes, .. } if nodes[0]["text"] == "Result for lucid")));
+
+        p.call("__action", queue_handle, Some(r#"{"id":"q:a","value":""}"#.into())).unwrap();
+        let l = logs(&ops);
+        assert!(l.iter().any(|x| x == "plain custom"), "{l:?}");
+        assert!(l.iter().any(|x| x == "select a"), "{l:?}");
+    }
+
+    #[test]
+    fn authorization_header_reaches_listed_hosts() {
+        let script = "fetch('https://api.example.com/me', { headers: { Authorization: 'Bearer abc', Cookie: 'x' } })";
+        let (p, ops, requests, _) = net_plugin(&["network"], script);
+        assert!(p.is_ok());
+        assert_eq!(requests.lock().unwrap().as_slice(), ["GET https://api.example.com/me [authorization=Bearer abc]"]);
+        drop(ops);
     }
 }

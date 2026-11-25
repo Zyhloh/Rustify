@@ -3,7 +3,8 @@ import { Icon, Icons } from "icons.slint";
 import { Chip, PlayFab, Artwork, Scroller, Bleed } from "components.slint";
 import { Shelf, CardGrid } from "home.slint";
 import { TrackRow } from "collection.slint";
-import { Store, Player, TileData, CardData } from "store.slint";
+import { Store, Player, TileData, CardData, Plugins } from "store.slint";
+import { Block } from "plugins.slint";
 
 component BrowseTile inherits Rectangle {
     in property <TileData> tile;
@@ -223,6 +224,34 @@ export component SearchPage inherits Rectangle {
                     width: parent.tile-w;
                     height: parent.tile-h;
                     tile: tile;
+                }
+            }
+
+            if !root.browsing: VerticalLayout {
+                spacing: 24px;
+                    for section in Plugins.search-sections: Rectangle {
+                    border-radius: Theme.radius;
+                    background: transparent;
+                    height: search-body.preferred-height;
+
+                    search-body := VerticalLayout {
+                        padding: 0px;
+                        spacing: 10px;
+
+                        Text {
+                            text: section.title;
+                            color: Theme.text;
+                            font-size: 24px;
+                            font-weight: 700;
+                            overflow: elide;
+                        }
+
+                        for b in section.blocks: Block {
+                            data: b;
+                            plugin: section.plugin;
+                            section: section.id;
+                        }
+                    }
                 }
             }
 
